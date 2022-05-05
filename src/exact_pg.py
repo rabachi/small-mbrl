@@ -12,10 +12,10 @@ import csv  # For logging the data
 import os  # Manipulating folders for storing/loading data
 import time  # For recording runtime
 
-
-from utils import *
-from plotting import *
-from deploy import *
+from src.utils import *
+# from utils import *
+# from plotting import *
+# from deploy import *
 
 models=[]
 

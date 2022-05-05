@@ -1,8 +1,5 @@
-import numpy as onp
-from numpy.random import default_rng
-# import jax
-# import jax.numpy as np
-import pdb
+import numpy as np
+from numpy.random import RandomState
 
 
 class Chain(object):
@@ -50,9 +47,9 @@ class Chain(object):
         self.state = jax.random.categorical(subkey, self.initial_distribution*100.)
         return np.asarray(self.state)
 
-    def step(self, action, state, key):
-        next_state = jax.random.categorical(key, self.p[action, state]*100.)
-        reward = self.r[state, action]
+    def step(self, action, key):
+        next_state = jax.random.categorical(key, self.p[action, self.state]*100.)
+        reward = self.r[self.state, action]
         self.state = next_state
         terminal = False
         return (next_state, reward, terminal, {})
@@ -87,10 +84,10 @@ class continuousLQR(object):
 
 def Garnet(StateSize = 5, ActionSize = 2, GarnetParam = (1,1)):
     # Initialize the transition probability matrix
-    P = [onp.matrix(onp.zeros((StateSize, StateSize))) for act in
+    P = [np.matrix(np.zeros((StateSize, StateSize))) for act in
          range(ActionSize)]
 
-    R = onp.zeros((StateSize, 1))
+    R = np.zeros((StateSize, 1))
 
     b_P = GarnetParam[0] # branching factor
     b_R = GarnetParam[1] # number of non-zero rewards
@@ -98,39 +95,43 @@ def Garnet(StateSize = 5, ActionSize = 2, GarnetParam = (1,1)):
     # Setting up the transition probability matrix
     for act in range(ActionSize):
         for ind in range(StateSize):
-            pVec = onp.zeros(StateSize) + 1e-6
-            p_vec = onp.append(onp.random.uniform(0,1,b_P - 1),[0,1])
-            p_vec = onp.diff(onp.sort(p_vec))
-            pVec[onp.random.choice(StateSize, b_P, replace=False)] = p_vec
+            pVec = np.zeros(StateSize) + 1e-6
+            p_vec = np.append(np.random.uniform(0,1,b_P - 1),[0,1])
+            p_vec = np.diff(np.sort(p_vec))
+            pVec[np.random.choice(StateSize, b_P, replace=False)] = p_vec
             pVec /= sum(pVec)
             P[act][ind,:] = pVec
 
-    R[onp.random.choice(StateSize, b_R, replace=False)] = onp.random.uniform(0,1,b_R)[:,onp.newaxis]
+    R[np.random.choice(StateSize, b_R, replace=False)] = np.random.uniform(0,1,b_R)[:, np.newaxis]
 
-    return onp.array(P), onp.tile(onp.array(R), ActionSize), 0.9
+    return np.array(P), np.tile(np.array(R), ActionSize), 0.9
 
 
 class GarnetMDP(object):
     def __init__(self, states_dim, actions_dim, garnet_param=(1,1)):
         self.seed()
-        self.states_dim = states_dim
-        self.actions_dim = actions_dim
+        self.nState = states_dim
+        self.nAction = actions_dim
         self.P, self.R, self.discount = Garnet(states_dim,
                                                actions_dim,
                                                garnet_param)
         self.P = self.P.reshape(states_dim, actions_dim, states_dim)
+        self.initial_distribution = np.ones(self.nState)*1.0/self.nState
+        self.garnet_param = garnet_param
+
+    def get_name(self):
+        return f'Garnet({self.nState},{self.nAction},{self.garnet_param})'
 
     def seed(self, seed=None):
-        self.rng = default_rng()
+        self.rng = RandomState(seed)
 
     def reset(self):
-        self.state = onp.random.choice(self.states_dim)
+        self.state = self.rng.multinomial(1, self.initial_distribution).nonzero()[0][0]
         return self.state
 
     def step(self, action):
         reward = self.R[self.state, action]
-        state_prime = self.rng.multinomial(1, self.P[self.state,
-                                                     action]).nonzero()[0][0]
+        state_prime = self.rng.multinomial(1, self.P[self.state, action]).nonzero()[0][0]
         self.state = state_prime
         return state_prime, reward, 0, {}
 
@@ -138,7 +139,7 @@ class GarnetMDP(object):
 class State2MDP(object):
     ''' Class for linear quadratic dynamics '''
 
-    def __init__(self):
+    def __init__(self, SEED):
         '''
         Initializes:
         tuple (P, R, gamma) where the first element is a tensor of shape
@@ -146,47 +147,50 @@ class State2MDP(object):
         last element is the scalar (float) discount factor.
         '''
         super(State2MDP, self).__init__()
-        self.p = onp.array([[[0.7, 0.3], [0.2, 0.8]],
+        self.P = np.array([[[0.7, 0.3], [0.2, 0.8]],
                             [[0.99, 0.01], [0.99, 0.01]]
                            ])
         # self.p = onp.array([[[1.-1e-6, 1e-6], [1e-6, 1.-1e-6]],
         #                     [[1.-1e-6, 1e-6], [1.-1e-6, 1e-6]]
         #                    ])
-        self.r = onp.array(([[-0.45, -0.1],
+        self.R = np.array(([[-0.45, -0.1],
                                 [0.5, 0.5]
                             ]))
         self.discount = 0.9
         self.state = None
-        self.n_actions, self.n_states = self.p.shape[:2]
-        self.initial_distribution = onp.ones(self.n_states) / self.n_states
+        self.nAction, self.nState = self.P.shape[:2]
+        self.initial_distribution = np.ones(self.nState) / self.nState
+        self.rng = np.random.RandomState(SEED)
+        
+    def get_name(self):
+        return 'State2MDP'
+        
+    # def seed(self, key):
+    #     '''set random seed for environment'''
+    #     # onp.random.seed(key)
+    #     self.rng = np.random.RandomState(key)
+    #     # self.key = key#jax.random.PRNGKey(key)
 
-    def seed(self, key):
-        '''set random seed for environment'''
-        onp.random.seed(key)
-        # self.key = key#jax.random.PRNGKey(key)
-
-    def reset(self, key):
-        all_states = onp.arange(self.n_states)
+    def reset(self):
+        all_states = np.arange(self.nState)
         # self.key, subkey = jax.random.split(self.key)
-        self.state = all_states[onp.random.multinomial(1,
-                                                       self.initial_distribution).nonzero()] #jax.random.categorical(subkey,
+        self.state = all_states[self.rng.multinomial(1, self.initial_distribution).nonzero()] #jax.random.categorical(subkey,
         # self.initial_distribution) #
 
         # self.state = jax.random.categorical(key, self.initial_distribution)
         # return onp.asarray(self.state)
         return self.state[0]
 
-    def step(self, action, state):#, key):
-        all_states = onp.arange(self.n_states)
-        next_state_probs = self.p[action, self.state]
+    def step(self, action):#, key):
+        all_states = np.arange(self.nState)
+        next_state_probs = self.P[action, self.state]
         # # next_state = onp.asarray([int(jax.random.bernoulli(key, p=next_state_probs[0][0]))])
         
         # self.key, subkey = jax.random.split(self.key)
         # next_state = jax.random.categorical(subkey, self.p[action, self.state])
         # next_state = jax.random.categorical(key, self.p[action, state])
-        next_state = all_states[onp.random.multinomial(1, next_state_probs[0]).nonzero()]
-        print(next_state[0])
-        reward = self.r[state, action] 
+        next_state = all_states[self.rng.multinomial(1, next_state_probs[0]).nonzero()]
+        reward = self.R[self.state, action] 
 
         terminal = False
         return (next_state[0], reward, terminal, {})
@@ -233,6 +237,3 @@ class State_3_MDP(object):
         terminal = False
         return (next_state, reward, terminal, {})
 
-# class Chain(object):
-#
-#     def __init__(self):

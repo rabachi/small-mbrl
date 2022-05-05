@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from src.envs import State2MDP, GarnetMDP
+from envs.envs import State2MDP, GarnetMDP
 from src.model import DirichletModel
 
 from src.exact_pg import policy_performance, get_policy, \
@@ -11,7 +11,8 @@ from src.exact_pg import policy_performance, get_policy, \
 from src.utils import sigmoid
 from jax.experimental import optimizers
 from jax.lax import stop_gradient
-from src.logger import DataLogger
+from src.logger import CSVLogger
+from src.utils import *
 
 def experiment_var():
     # env setup
@@ -21,8 +22,9 @@ def experiment_var():
     nAction = 5 #env.action_space.n
     nEps = 20
 
-    logger = DataLogger(
-        fieldnames = ('av_V_p_pi')
+    logger = CSVLogger(
+        fieldnames={'av_V_p_pi':0},
+        filename='./log.csv'
     )
 
     agent = DirichletModel(nState, nAction)
@@ -58,31 +60,28 @@ def experiment_var():
     alpha = 0.1 #Placeholder
     for i in range(num_iters):
         to_log_v = 0
-        p_grad = np.zeros_like(p_params)
+        p_grad = jnp.zeros_like(p_params)
         for sample in range(num_samples):
             R_samp, P_samp = agent.sample_mdp() #Can I sample in
             # parallel? Do many samples here, then do
             # policy_evaluation in parallel (using vmap eg)?
-            V_p_pi = agent.policy_evaluation(
-                (P_samp, R_samp, agent.discount),
+            V_p_pi, V_p_pi_grad = jax.value_and_grad(
+                agent.policy_performance, 1)(
+                (P_samp, R_samp),
                 p_params
             )
             # delta way
             if V_p_pi == alpha:
                 pass
-            V_p_pi_grad = jax.grad(agent.policy_evaluation, 1)(
-                (P_samp, R_samp, agent.discount),
-                p_params
-            )
+
             to_log_v += V_p_pi
             p_grad += jax.grad(sigmoid)(V_p_pi - alpha) * V_p_pi_grad
 
         p_params += p_lr * p_grad/num_samples
-        logger.add('av_V_p_pi', to_log_v/num_samples)
+        logger.writerow({'av_V_p_pi': to_log_v/num_samples})
         print(f'Value fn: {to_log_v/num_samples}')
 
-    V_p_pi = agent.policy_evaluation((P_samp, R_samp,
-                                      agent.discount), p_params)
+    V_p_pi = agent.policy_evaluation((P_samp, R_samp), p_params)
     logger.plot_histogram()#V_p_pi, p_params) #put in logger
     logger.plot_performance()#training_values) #put in logger
 
