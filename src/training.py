@@ -45,7 +45,10 @@ class MBRLLoop():
                 'av-V-model-pi' : 0,
                 'av-V-env-pi' : 0,
                 'v-alpha-quantile': 0,
-                'cvar-alpha' : 0
+                'cvar-alpha' : 0,
+                'cvar-constraint-lambda': 0,
+                'regret'     : 0,
+                'bayesian-regret' : 0
             },
             filename=save_sub_dir
         )
@@ -59,7 +62,7 @@ class MBRLLoop():
             # 'num_train_iters': self.num_train_iters,
             'risk_threshold' : self.risk_threshold,
             'p_lr' : self.policy_lr,
-            'k_value' : self.k_value
+            'k_value' : self.k_value,
         }
         self.mc2ps_args = {
             'batch_size' : batch_size, 
@@ -77,32 +80,65 @@ class MBRLLoop():
             done = False
             step = 0
             state = self.env.reset()
-            while not done and (step < self.traj_len): 
+            while not done and (step < self.traj_len):
                 action = self.agent.policy(state)
                 next_state, reward, done, _ = self.env.step(action)
                 self.agent.update_obs(state, action, reward, next_state, done)
                 state = next_state
                 step += 1
 
-            if ep >= 1:
-                # R, P = self.agent.get_CE_model()
-                #FIX THIS
-                vf_model = self.agent.grad_step(self.train_type, **self.args)
-
-                # print(self.agent.policy.get_params())
-                if ep % self.log_freq == 0:
-                    env_returns = self.evaluate_agent_exact()
-
-                #FIX THIS
-                self.logger.writerow(
-                    {
-                        'av-V-model-pi' : vf_model,
-                        'av-V-env-pi' : env_returns,
+            if (ep > 0) and (ep % 5 == 0): #update after every 5 collected episodes 
+                if self.train_type == 'MC2PS':
+                    v_alpha_quantile, cvar_alpha = self.agent.MC2PS(**self.mc2ps_args)
+                    vf_model = 0
+                    env_returns = self.evaluate_agent()#_exact()
+                    regret, bayesian_regret = self.regret_evaluate_agent()
+                    self.logger.writerow(
+                        {
+                            'av-V-model-pi' : vf_model,
+                            'av-V-env-pi' : env_returns,
+                            'v-alpha-quantile' : v_alpha_quantile,
+                            'cvar-alpha' : cvar_alpha,
+                            'cvar-constraint-lambda': self.agent.lambda_param,
+                            'regret'     : regret,
+                            'bayesian-regret' : bayesian_regret
                         }
                     )
-                print(f'Iter: {ep}, Model Value fn: {vf_model}, Env rets: {env_returns}')
+                    print(f'MC2PS: {ep}, Model Value fn: {vf_model:.3f}, Env rets: {env_returns:.3f}')
+                    self.logger.close()
+                    return
+                
+                mid_train_steps = 100
+                #reset policy params here
+                self.agent.policy.reset_params()
+                for train_step in range(mid_train_steps):
+                    # R, P = self.agent.get_CE_model()
+                    vf_model, v_alpha_quantile, cvar_alpha = self.agent.grad_step(self.train_type, **self.args)
+
+                    # print(self.agent.policy.get_params())
+                    if ep % self.log_freq == 0:
+                        env_returns = self.evaluate_agent()
+                        regret, bayesian_regret = self.regret_evaluate_agent()
+
+                    self.logger.writerow(
+                        {
+                            'av-V-model-pi' : vf_model,
+                            'av-V-env-pi' : env_returns,
+                            'v-alpha-quantile' : v_alpha_quantile,
+                            'cvar-alpha' : cvar_alpha,
+                            'cvar-constraint-lambda': self.agent.lambda_param,
+                            'regret'     : regret,
+                            'bayesian-regret' : bayesian_regret
+                            }
+                        )
+                    print(f'Iter: {ep}, Model Value fn: {vf_model:.3f}, Env rets: {env_returns:.3f}, cvar: {cvar_alpha:.3f}')
         
         self.logger.close()
+
+    def regret_evaluate_agent(self):
+        regret = 0
+        bayesian_regret = 0
+        return regret, bayesian_regret
 
     def evaluate_agent(self):
         eval_rewards = np.zeros((self.num_eps_eval, 1))
@@ -145,12 +181,16 @@ class MBRLLoop():
             v_alpha_quantile, cvar_alpha = self.agent.MC2PS(**self.mc2ps_args)
             vf_model = 0
             env_returns = self.evaluate_agent()#_exact()
+            regret, bayesian_regret = self.regret_evaluate_agent()
             self.logger.writerow(
                 {
                     'av-V-model-pi' : vf_model,
                     'av-V-env-pi' : env_returns,
                     'v-alpha-quantile' : v_alpha_quantile,
-                    'cvar-alpha' : cvar_alpha
+                    'cvar-constraint-lambda' : self.agent.lambda_param,
+                    'cvar-alpha' : cvar_alpha,
+                    'regret'     : regret,
+                    'bayesian-regret' : bayesian_regret
                     }
                 )
             print(f'MC2PS: {ep}, Model Value fn: {vf_model}, Env rets: {env_returns}')
@@ -163,14 +203,18 @@ class MBRLLoop():
 
             # print(self.agent.policy.get_params())
             if p_step % self.log_freq == 0:
-                env_returns = self.evaluate_agent_exact()
+                env_returns = self.evaluate_agent()
+                regret, bayesian_regret = self.regret_evaluate_agent()
 
             self.logger.writerow(
                 {
                     'av-V-model-pi' : vf_model,
                     'av-V-env-pi' : env_returns,
                     'v-alpha-quantile' : v_alpha_quantile,
-                    'cvar-alpha' : cvar_alpha
+                    'cvar-constraint-lambda' : self.agent.lambda_param,
+                    'cvar-alpha' : cvar_alpha,
+                    'regret'     : regret,
+                    'bayesian-regret' : bayesian_regret
                     }
                 )
             print(f'Iter: {p_step}, Model Value fn: {vf_model}, Env rets: {env_returns}, cvar: {cvar_alpha}')

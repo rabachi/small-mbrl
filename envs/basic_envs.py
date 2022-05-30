@@ -2,59 +2,6 @@ import numpy as np
 from numpy.random import RandomState
 
 
-class Chain(object):
-    """docstring for chain"""
-    def __init__(self, n_states):
-        super(Chain, self).__init__()
-        self.n_states = n_states
-        self.n_actions = 3
-        prob_a0 = 1.0
-        prob_a1 = 1.0
-        prob_a2 = 1.# - (prob_a0 + prob_a1)
-
-        P_a0 = onp.eye(n_states)
-        P_a1_eye = np.eye(n_states - 1)
-        P_a1_column = np.hstack((np.zeros((n_states - 1, 1)), P_a1_eye))
-        last_state_e = onp.zeros((1, n_states))
-        last_state_e[:,-1] = 1.
-        P_a1 = np.vstack((P_a1_column, last_state_e))
-
-        P_a2 = onp.zeros((n_states, n_states))
-        P_a2[0,0] = 1.
-        P_a2[1,0] = 1.
-        P_a2[2,1] = 1.
-        P_a2[3,2] = 1.
-        P_a2[4,4] = 1.
-        # P_a2_column = onp.hstack((P_a2_eye, np.zeros((n_states - 1, 2))))
-        # P_a2 = onp.vstack((np.zeros((1, n_states)), P_a2_column)) * prob_a2
-        # P_a2[4,3] = 0.
-
-        self.p = np.stack((P_a0, P_a1, P_a2), axis=0)
-
-        R_0 = np.array([[-1., -1., -1.]])
-        R_last = np.array([[1., 1., 1.]])
-        R_zeros = np.ones((n_states - 2, 3))*-1.
-        self.r = np.vstack((R_0, R_zeros, R_last))
-        self.discount = 0.9
-        self.initial_distribution = np.array([0., 0., 1., 0., 0.])
-
-    def seed(self, key):
-        '''set random seed for environment'''
-        self.key = key
-
-    def reset(self, key):
-        self.key, subkey = jax.random.split(self.key)
-        self.state = jax.random.categorical(subkey, self.initial_distribution*100.)
-        return np.asarray(self.state)
-
-    def step(self, action, key):
-        next_state = jax.random.categorical(key, self.p[action, self.state]*100.)
-        reward = self.r[self.state, action]
-        self.state = next_state
-        terminal = False
-        return (next_state, reward, terminal, {})
-
-
 class continuousLQR(object):
     def __init__(self):
         super(continuousLQR, self).__init__()
@@ -107,7 +54,7 @@ def Garnet(StateSize = 5, ActionSize = 2, GarnetParam = (1,1)):
     return np.array(P), np.tile(np.array(R), ActionSize), 0.9
 
 
-class GarnetMDP(object):
+class GarnetMDP:
     def __init__(self, states_dim, actions_dim, garnet_param=(1,1)):
         self.seed()
         self.nState = states_dim
@@ -136,7 +83,7 @@ class GarnetMDP(object):
         return state_prime, reward, 0, {}
 
 
-class State2MDP(object):
+class State2MDP:
     ''' Class for linear quadratic dynamics '''
 
     def __init__(self, SEED):
@@ -146,7 +93,6 @@ class State2MDP(object):
         (A x S x S), the second element 'R' has shape (S x A) and the
         last element is the scalar (float) discount factor.
         '''
-        super(State2MDP, self).__init__()
         self.P = np.array([[[0.7, 0.3], [0.2, 0.8]],
                             [[0.99, 0.01], [0.99, 0.01]]
                            ])
@@ -190,7 +136,7 @@ class State2MDP(object):
         # next_state = jax.random.categorical(subkey, self.p[action, self.state])
         # next_state = jax.random.categorical(key, self.p[action, state])
         next_state = all_states[self.rng.multinomial(1, next_state_probs[0]).nonzero()]
-        reward = self.R[self.state, action] 
+        reward = self.R[self.state, action][0]
 
         terminal = False
         return (next_state[0], reward, terminal, {})

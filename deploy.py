@@ -111,23 +111,58 @@ def deploy_losses():
     parser = make_parser()
     args, _ = parser.parse_known_args()
     argss = []
-    train_types = ['grad-risk-eval', 'CVaR']#['pg', 'VaR-sigmoid', 'CVaR', 'regret-CVaR', 'k-of-N']#, 'pg-CE', 'pg', 'VaR-sigmoid']
-    seeds = [17, 13, 0, 5, 123456789] #[23]#698793, 47, 4139,  48784127, 41]#, 17, 13, 698793, 47, 4139]
+    train_types = [
+        # 'VaR-sigmoid',
+        # 'VaR-delta',
+        # 'max-opt', #opt only
+        'upper-cvar', #opt only
+        # 'psrl-opt-cvar', #opt + constraint
+        # 'max-opt-cvar', #opt + constraint
+        # 'optimistic-psrl-opt-cvar', #incorrect
+        'upper-cvar-opt-cvar', #opt + constraint
+        # 'CVaR', #risk only
+        # 'grad-risk-eval',
+        # 'regret-CVaR',
+        # 'robust-DP',
+        # 'k-of-N',
+        # 'pg', 
+        # 'pg-CE',
+        # 'psrl' #opt only
+    ]
+    # train_types = [
+    #     'max-opt', #opt only
+    #     'upper-cvar', #opt only
+    #     'psrl-opt-cvar', #opt + constraint
+    #     'max-opt-cvar', #opt + constraint
+    #     'upper-cvar-opt-cvar', #opt + constraint
+    #     # 'CVaR', #risk only
+    #     # 'pg', 
+    #     # 'pg-CE',
+    #     'psrl' #opt only
+    # ]
+    seeds = range(5)#[1,2,4]##range(15) #[17, 3, 11, 19, 23]#13, 2, 0, 5, 123,  #[23]#698793, 47, 4139,  48784127, 41]#, 17, 13, 698793, 47, 4139]
     for train_type in train_types:
         for seed in seeds:
             new_args = copy.deepcopy(args)
             new_args.model_lr = 0.01
-            new_args.policy_lr = 0.1
-            new_args.num_samples_plan = 40
-            new_args.num_eps = 10 if train_type=='VaR-delta' else 50
+            new_args.policy_lr = 0.01 if train_type in ['max-opt-cvar', 'upper-cvar-opt-cvar'] else 0.1
+        #     new_args.policy_lr = 0.01 if train_type in ['psrl-opt-cvar',
+        # 'max-opt-cvar',
+        # 'optimistic-psrl-opt-cvar',
+        # 'upper-cvar-opt-cvar'] else 0.1
+            new_args.num_samples_plan = 10
+            new_args.num_eps = 10 if train_type=='VaR-delta' else 150
             new_args.train_type = train_type
-            new_args.traj_len = 1000
+            new_args.traj_len = 100
             new_args.risk_threshold = 0.1
             new_args.k_value = 4
             new_args.log_freq = 1
             new_args.num_eps_eval = 10
             new_args.seed = seed
-            new_args.save_sub_dir = new_args.save_dir + '/' + get_id(new_args)
+            # new_args.save_sub_dir = new_args.save_dir + '/' + 'state2mdp-' + get_id(new_args)
+            # new_args.save_sub_dir = new_args.save_dir + '/' + 'cliffwalking-' + get_id(new_args)
+            # new_args.save_sub_dir = new_args.save_dir + '/' + 'Frozenlake-constraint-1-midtrainsteps-100-' + get_id(new_args)
+            new_args.save_sub_dir = new_args.save_dir + '/' + 'Frozenlake-constraint-1-midtrainsteps-100-upper0.4-' + get_id(new_args)
             argss += [new_args]
     return argss
 

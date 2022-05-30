@@ -30,5 +30,8 @@ class Policy:
     def update_params(self, p_params):
         self.p_params = p_params
     
+    def reset_params(self):
+        self.p_params = jnp.ones((self.nState, self.nAction)) * 0.01
+
     def get_policy(self, p_params):
         return softmax(p_params.reshape(self.nState, self.nAction), self.temp)

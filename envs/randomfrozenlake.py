@@ -7,7 +7,6 @@ from typing import Optional
 import numpy as np
 
 from gym import Env, spaces, utils
-from gym.envs.toy_text.utils import categorical_sample
 from gym.error import DependencyNotInstalled
 
 LEFT = 0
@@ -66,7 +65,7 @@ def generate_random_map(size=8, p=0.8):
     return ["".join(x) for x in res]
 
 
-class FrozenLakeEnv(Env):
+class RandomFrozenLakeEnv(Env):
     """
     Frozen lake involves crossing a frozen lake from Start(S) to Goal(G) without falling into any Holes(H) by walking over
     the Frozen(F) lake. The agent may not always move in the intended direction due to the slippery nature of the frozen lake.
@@ -141,7 +140,7 @@ class FrozenLakeEnv(Env):
 
     metadata = {"render_modes": ["human", "ansi", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, desc=None, map_name="4x4", is_slippery=True):
+    def __init__(self, seed, desc=None, map_name="4x4", is_slippery=True):
         if desc is None and map_name is None:
             desc = generate_random_map()
         elif desc is None:
@@ -162,6 +161,9 @@ class FrozenLakeEnv(Env):
             return row * ncol + col
 
         def inc(row, col, a):
+            if desc[row, col] in b"GH":
+                return (row, col)
+
             if a == LEFT:
                 col = max(col - 1, 0)
             elif a == DOWN:
@@ -176,8 +178,8 @@ class FrozenLakeEnv(Env):
             newrow, newcol = inc(row, col, action)
             newstate = to_s(newrow, newcol)
             newletter = desc[newrow, newcol]
-            done = bytes(newletter) in b"GH"
-            reward = float(newletter == b"G")
+            done = False #bytes(newletter) in b"GH"
+            reward = 10.*float(newletter == b"G") - float(newletter == b"H")
             return newstate, reward, done
 
         for row in range(nrow):
@@ -187,7 +189,8 @@ class FrozenLakeEnv(Env):
                     li = self.P[s][a]
                     letter = desc[row, col]
                     if letter in b"GH":
-                        li.append((1.0, s, 0, True))
+                        li.append((1.0, *update_probability_matrix(row, col, 0)))
+                        # li.append((1.0, s, 0, True))
                     else:
                         if is_slippery:
                             for b in [(a - 1) % 4, a, (a + 1) % 4]:
@@ -210,14 +213,41 @@ class FrozenLakeEnv(Env):
         self.elf_images = None
         self.goal_img = None
         self.start_img = None
+        self.rng = np.random.RandomState(seed)
+
+    def get_name(self):
+        return "RandomFrozenLake"
+
+    @property
+    def nState(self):
+        return self.observation_space.n
+    
+    @property
+    def nAction(self):
+        return self.action_space.n
+
+    @property
+    def initial_distribution(self):
+        dist = np.zeros(self.nState)
+        dist[0] = 1.0
+        return dist
 
     def step(self, a):
         transitions = self.P[self.s][a]
-        i = categorical_sample([t[0] for t in transitions], self.np_random)
+        i = self.rng.multinomial(1, [t[0] for t in transitions]).nonzero()[0][0]
         p, s, r, d = transitions[i]
         self.s = s
         self.lastaction = a
         return (int(s), r, d, {"prob": p})
+
+    def reset_to_state(
+        self,
+        state
+    ):
+        self.s = state
+        # next_state, _, _, _ = self.step(action)
+        # self.s = next_state
+        return int(self.s)
 
     def reset(
         self,
@@ -226,8 +256,9 @@ class FrozenLakeEnv(Env):
         return_info: bool = False,
         options: Optional[dict] = None,
     ):
-        super().reset(seed=seed)
-        self.s = categorical_sample(self.initial_state_distrib, self.np_random)
+        # super().reset(seed=seed)
+        # super().reset()
+        self.s = self.rng.multinomial(1, self.initial_state_distrib).nonzero()[0][0]
         self.lastaction = None
 
         if not return_info:

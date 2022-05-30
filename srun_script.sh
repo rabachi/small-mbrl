@@ -1,7 +1,8 @@
 #!/bin/bash
-
-#SBATCH -t 180:00:00               # max runtime is 180 hours (9 days)
-#SBATCH --mem=10GB
+#SBATCH --account=deadline
+#SBATCH --qos=deadline
+#SBATCH -t 180:00:00             # max runtime is 180 hours (9 days)
+#SBATCH --mem=20GB
 #SBATCH --gres=cpu:0
 #SBATCH -p cpu
 #SBATCH --output=slurm_out/slurm_%A_%a.out
@@ -13,7 +14,9 @@
 
 #conda activate py37
 
-module load pytorch1.0-cuda9.0-python3.6
+
+
+module load pytorch1.7.1-cuda11.0-python3.6
 
 echo "${SLURM_ARRAY_TASK_ID}"
 

@@ -2,30 +2,49 @@ from torch import initial_seed
 from src.logger import graph_single, graph_seeds
 from src.training import MBRLLoop
 from src.model import DirichletModel
-# from envs.basic_envs import GarnetMDP, State2MDP
-import envs
+from envs.basic_envs import GarnetMDP, State2MDP
+from envs.chain import Chain
+from envs.ring import Ring
+from envs.randomfrozenlake import RandomFrozenLakeEnv
+from envs.cliffwalking import CliffWalkingEnv
 # from src.logger import CSVLogger
 from deploy import deploy_losses, deploy_MC2PS
 import numpy as np
 import gym
+import pdb
 # SEED = 0
 
-def experiment(args):
+def experiment(args, env):
     # env setup
-    nState = 2
-    nAction = 2
+    nState = 5
+    prob_slip = 0.2
+    nAction = 3
+    discount = 0.9
+
     # Gparams = (2,2)
     # env = GarnetMDP(nState, nAction, Gparams)
-    env = envs.basic_envs.State2MDP(args.seed)
-    # env_name = 'FrozenLake-v1'
-    # env = gym.make(env_name)
-    # nState = env.observation_space.n
-    # nAction = env.action_space.n
+    # env = envs.basic_envs.State2MDP(args.seed)
+    # env = Chain(nState, prob_slip, discount, args.seed)
+    # env = Ring(args.seed)
+    # env = RandomFrozenLakeEnv(args.seed, map_name=None) #this seed is not setting all the randomness here (map generated is using a diff number generator)
+    nState = env.nState
+    nAction = env.nAction
+
+    # optimal_policy = optimal_policies[env.get_name()]
 
     print(f'Training {args.train_type}')
     
-    initial_distribution = env.initial_distribution
-    discount = env.discount
+    if hasattr(env, 'initial_distribution'):
+        initial_distribution = env.initial_distribution
+    else:
+        initial_distribution = np.zeros(nState)
+        initial_distribution[0] = 1.
+    
+    if hasattr(env, 'discount'):
+        discount = env.discount
+    else:
+        discount = 0.9
+
 
     agent = DirichletModel(nState, nAction, int(args.seed), discount, initial_distribution)
 
@@ -33,7 +52,7 @@ def experiment(args):
     args_ = {
         'nState' : nState,
         'nAction': nAction,
-        'initial_distribution' : initial_distribution, #this might be a bad idea for all envs ... 
+        'initial_distribution' : initial_distribution, 
         'model_lr' : args.model_lr, 
         'policy_lr' : args.policy_lr,
         'num_samples_plan' : args.num_samples_plan,
@@ -55,15 +74,21 @@ def experiment(args):
         'significance_level' : args.significance_level
         }
     trainer = MBRLLoop(env, agent, **args_)
-    # trainer.training_loop()
-    trainer.training_then_sample()
 
-def make_plots(deploy_argss):
+    if args.train_type == 'MC2PS': #this one is only offline
+        trainer.training_then_sample()
+        return
+
+    trainer.training_loop()
+    # trainer.training_then_sample()
+
+def make_plots(deploy_argss, env_name):
     # deploy_argss = deploy_losses()
-    graph_seeds(deploy_argss, 'av-V-env-pi')
-    graph_seeds(deploy_argss, 'av-V-model-pi')
-    graph_seeds(deploy_argss, 'v-alpha-quantile')
-    graph_seeds(deploy_argss, 'cvar-alpha')
+    graph_seeds(deploy_argss, env_name, 'av-V-env-pi')
+    graph_seeds(deploy_argss, env_name, 'av-V-model-pi')
+    graph_seeds(deploy_argss, env_name, 'v-alpha-quantile')
+    graph_seeds(deploy_argss, env_name, 'cvar-alpha')
+    graph_seeds(deploy_argss, env_name, 'cvar-constraint-lambda')
 
 def experiment_manual(args):
     # env setup
@@ -110,7 +135,21 @@ def experiment_manual(args):
 if __name__=="__main__":
     deploy_argss = deploy_losses()
     # deploy_argss = deploy_MC2PS()
+    
+    deploy_args = deploy_argss[0]
+    env = RandomFrozenLakeEnv(deploy_args.seed, map_name=None)
+    # env = CliffWalkingEnv(deploy_args.seed) 
+    # env = Ring(deploy_args.seed)
+    # env = Chain(5, 0.2, 0.9, deploy_args.seed)
+    # env = State2MDP(deploy_args.seed)
+    # experiment(deploy_args, env)
+    # for i in range(1, deploy_args.num_eps):
+    #     with open(f'grad-cvar/iter_{i}.npy', 'rb') as f:
+    #         grad_cvar_i = np.load(f)
 
-    # deploy_args = deploy_argss[0]
-    # experiment(deploy_args)
-    make_plots(deploy_argss)
+    #     with open(f'grad-risk-eval/iter_{i}.npy', 'rb') as f:
+    #         grad_risk_i = np.load(f)
+
+    #     print(np.linalg.norm(grad_cvar_i - grad_risk_i))
+    env_name = env.get_name()
+    make_plots(deploy_argss, env_name)

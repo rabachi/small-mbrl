@@ -3,7 +3,69 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 import jax
 from jax.nn import sigmoid
+from itertools import product
 from replay_buffer import ReplayBuffer
+
+def update_mle(nState, nAction, batch):
+    transition_counts = np.zeros((nState, nAction, nState))
+    rewards_estimate = np.zeros((nState, nAction))
+    obses, actions, rewards, next_obses, not_dones, _ = batch
+    for state, action, reward, next_state, not_done in zip(obses, actions, rewards, next_obses, not_dones):
+        transition_counts[int(state), int(action), int(next_state)] += 1
+        rewards_estimate[int(state), int(action)] = reward
+
+    transition_counts = np.nan_to_num(transition_counts/np.sum(transition_counts, axis=2, keepdims=True))
+    return transition_counts, rewards_estimate
+
+def collect_sa(rng, env, nState, nAction, num_points_per_sa):
+    replay_buffer = ReplayBuffer([1], [1], num_points_per_sa * (env.nState*env.nAction))
+    count_sa = np.ones((env.nState, env.nAction)) * 0.#num_points_per_sa
+    # init_states = init_distr.nonzero()
+    # count_sa[init_states] = 0
+    # print(env.nState, env.nAction)
+    collected_all_sa = False if num_points_per_sa > 0 else True
+    # while not collected_all_sa:
+    done = False
+    for state, action in product(range(env.nState), range(env.nAction)):
+        while count_sa[state, action] < num_points_per_sa:
+            env.reset_to_state(state)
+            next_state, reward, done, _ = env.step(action)
+            if count_sa[state, action] < num_points_per_sa:
+                count_sa[state, action] += 1
+                replay_buffer.add(state, action, reward, next_state, done, done)
+            state = next_state
+            # collected_all_sa = (count_sa >= num_points_per_sa).all()
+            # print(count_sa)
+    # print(count_sa)
+    print('finished data collection')
+    return replay_buffer
+
+# def collect_sa(rng, env, nState, nAction, num_points_per_sa):
+#     replay_buffer = ReplayBuffer([1], [1], num_points_per_sa * (nState*nAction))
+#     count_sa = np.ones((nState, nAction)) * 0.#num_points_per_sa
+#     # init_states = init_distr.nonzero()
+#     # count_sa[init_states] = 0
+    
+#     collected_all_sa = False if num_points_per_sa > 0 else True
+#     trials = 0
+#     while not collected_all_sa and trials < 1e4:
+#         trials += 1
+#         done = False
+#         state = env.reset()
+#         step = 0
+#         while step < 100: #not collected_all_sa:
+#             action = int(rng.choice(nAction))
+#             next_state, reward, done, _ = env.step(action)
+#             if count_sa[state, action] < num_points_per_sa:
+#                 count_sa[state, action] += 1
+#                 replay_buffer.add(state, action, reward, next_state, done, done)
+#             state = next_state
+#             collected_all_sa = (count_sa >= num_points_per_sa).all()
+#             # print(count_sa)
+#             step += 1
+#     # print(count_sa)
+#     print('finished data collection')
+#     return replay_buffer
 
 def collect_data(rng, env, nEps, nSteps, policy):
     replay_buffer = ReplayBuffer([1], [1], nEps * nSteps)
@@ -54,8 +116,14 @@ def softmax(vals, temp=1.):
      temp (float, optional): Defaults to 1.. Temperature parameter
     Returns:
     """
-    return jnp.exp((1. / temp) * vals - logsumexp((1. / temp) *
-                                                  vals, axis=1, keepdims=True))
+    z = vals - jnp.max(vals, axis=1, keepdims=True)
+    numerator = jnp.exp(z)
+    denom = jnp.sum(numerator, axis=1, keepdims=True)
+    softmax = numerator/denom
+    # test = jnp.exp((1. / temp) * vals - logsumexp((1. / temp) *
+                                                #   vals, axis=1, keepdims=True))
+    # print(jnp.isclose(test, softmax))
+    return softmax
 
 if __name__ == "__main__":
     rewards = [1, 2, 3, 4]

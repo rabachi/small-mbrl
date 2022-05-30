@@ -38,28 +38,19 @@ def load_from_csv(path):
     :return:
     """
     # log_loc = 'log.csv'
-
     with open(path) as csvfile:
         reader = csv.DictReader(csvfile, skipinitialspace=True)
         data = {name: [] for name in reader.fieldnames}
         for row in reader:
             for name in reader.fieldnames:
                 data[name].append(row[name])
-    
-    data['av-V-model-pi'] = np.array([float(i.strip()) for i in data['av-V-model-pi']])
-    data['av-V-env-pi'] = np.array([float(i.strip()) for i in data['av-V-env-pi']])
-    data['v-alpha-quantile'] = np.array([float(i.strip()) for i in data['v-alpha-quantile']])
-    data['cvar-alpha'] = np.array([float(i.strip()) for i in data['cvar-alpha']])
+    index = 150
+    data['av-V-model-pi'] = np.array([float(i.strip()) for i in data['av-V-model-pi']])[:index]
+    data['av-V-env-pi'] = np.array([float(i.strip()) for i in data['av-V-env-pi']])[:index]
+    data['v-alpha-quantile'] = np.array([float(i.strip()) for i in data['v-alpha-quantile']])[:index]
+    data['cvar-alpha'] = np.array([float(i.strip()) for i in data['cvar-alpha']])[:index]
+    data['cvar-constraint-lambda'] = np.array([float(i.strip()) for i in data['cvar-constraint-lambda']])[:index]
     return data
-
-
-def plot_perforamnce(logger: CSVLogger):
-    # logger.
-    # plt.plot(steps, performance)
-    pass
-
-def plot_histogram(logger: CSVLogger):
-    pass
 
 def init_ax(fontsize=12, nrows=1, ncols=1):
     """
@@ -79,7 +70,7 @@ def init_ax(fontsize=12, nrows=1, ncols=1):
 
     # fig = plt.figure(figsize=(6.4, 4.8))  # / np.sqrt(nrows), 4.8 * nrows / np.sqrt(nrows)))
     # fig = plt.figure()
-    fig = plt.figure(figsize=(4.8, 6.4))
+    fig = plt.figure()#figsize=(4.0, 6.0))
     axs = [fig.add_subplot(nrows, ncols, i + 1) for i in range(nrows * ncols)]
     for ax in axs:
         ax.tick_params(axis='x', which='both', bottom=False, top=False)
@@ -155,7 +146,7 @@ def get_data_by_seed(argss):
     return data_by_seed
 
 
-def graph_seeds(argss, y_type):
+def graph_seeds(argss, env_name, y_type):
     """
 
     :param argss:
@@ -188,6 +179,7 @@ def graph_seeds(argss, y_type):
     [setup_ax(ax, fontsize=6) for ax in axs]
     fig.tight_layout(pad=1.0)
     # env_name = 'FrozenLake'
-    env_name = 'MDP2State'
+    # env_name = 'MDP2State'
+    # env_name = 'Chain5StateSlip0.2'
     fig.savefig(f'images/{env_name}_graph_seeds_{y_type}.pdf')#, bbox_inches='tight')
     plt.close(fig)
