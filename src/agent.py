@@ -1,3 +1,4 @@
+from email import policy
 import numpy as np
 import jax.numpy as jnp
 import jax
@@ -5,9 +6,40 @@ from itertools import product
 from typing import List, Tuple, Dict
 from scipy.special import comb
 import pickle
+from memory_profiler import profile
+from src.utils import softmax
+import gc
 
-CVAR_CONSTRAINT = -1.0 #RFL
+CVAR_CONSTRAINT = -2.0 #RFL
 # CVAR_CONSTRAINT = -4.0 #cliffwalking
+
+
+def get_policy(p_params, nState, nAction):
+    return softmax(p_params.reshape(nState, nAction), 1.0)
+
+def policy_evaluation(mdp: Tuple[np.ndarray], policy: jnp.ndarray, nState, discount): 
+    # Vals[state, timestep]
+    r_matrix, p_matrix = mdp
+    ppi = jnp.einsum('sat,sa->st', p_matrix, policy)
+    rpi = jnp.einsum('sa,sa->s', r_matrix, policy)
+    v_pi = jnp.linalg.solve(np.eye(nState) -
+                            discount*ppi, rpi)
+    return v_pi
+
+def policy_performance(mdp, policy, initial_distribution, nState, discount):
+    vf = policy_evaluation(mdp, policy, nState, discount)
+    return initial_distribution @ vf
+
+def calculate_value_and_grad(mdp, grad_pi, policy, nState, discount, initial_distribution):
+    r_matrix, p_matrix = mdp
+    ppi = np.einsum('nsat,sa->nst', p_matrix, policy)
+    rpi = np.einsum('nsa,sa->ns', r_matrix, policy)
+    vpi = np.array([np.linalg.solve(np.eye(nState) - discount*ppi[i], rpi[i]) for i in range(rpi.shape[0])])
+    qpi = r_matrix + discount * np.einsum('nsat,nt->nsa', p_matrix, vpi)
+    gradpi_q = np.einsum('sapq,nsa->nspq', grad_pi, qpi)
+    j_grad = initial_distribution @ np.array([np.linalg.solve(np.eye(nState) - discount * ppi[i], gradpi_q[i]) for i in range(rpi.shape[0])])
+    j = np.einsum('ns,ns->n', np.tile(initial_distribution, rpi.shape[0]).reshape(vpi.shape[0], vpi.shape[1]), vpi)
+    return j, j_grad
 
 class Agent:
     def __init__(self, nState, discount, initial_distribution, policy) -> None:
@@ -16,20 +48,8 @@ class Agent:
         self.initial_distribution = initial_distribution
         self.policy = policy
         self.counter = 0
-        self.lambda_param = 10.
-        
-    def policy_evaluation(self, mdp: Tuple[np.ndarray], policy: jnp.ndarray): 
-        # Vals[state, timestep]
-        r_matrix, p_matrix = mdp
-        ppi = jnp.einsum('sat,sa->st', p_matrix, policy)
-        rpi = jnp.einsum('sa,sa->s', r_matrix, policy)
-        v_pi = jnp.linalg.solve(np.eye(self.nState) -
-                               self.discount*ppi, rpi)
-        return v_pi
+        self.lambda_param = 0.5
 
-    def policy_performance(self, mdp, p_params):
-        vf = self.policy_evaluation(mdp, self.policy.get_policy(p_params))
-        return self.initial_distribution @ vf
 
     def value_iteration(self, r_matrix: np.ndarray, p_matrix: np.ndarray):
         epsilon = 1e-5
@@ -60,6 +80,7 @@ class Agent:
         return V #should I do a fitted method here?
         
     #all methods below should go into a super 'model' or agent class. 
+    # @profile
     def grad_step(self, train_type, **kwargs):
         if train_type == 'VaR-sigmoid':
             return self.VaR_sigmoid_grad_step(**kwargs)
@@ -107,27 +128,14 @@ class Agent:
             risk_threshold=None
         ):
         p_params = self.policy.get_params()
-        to_log_v = 0
-        p_grad = jnp.zeros_like(p_params)
-        v_samples = np.zeros(num_samples_plan)
-        for sample in range(num_samples_plan):
-            R_samp, P_samp = self.sample_mdp()
-        
-            V_p_pi, V_p_pi_grad = jax.value_and_grad(
-                self.policy_performance, 1)(
-                (R_samp, P_samp),
-                p_params
-            )
-            p_grad += V_p_pi_grad
-            to_log_v += V_p_pi
-            v_samples[sample] = V_p_pi
-
-        av_vpi = to_log_v/num_samples_plan
-        p_params += p_lr * p_grad/num_samples_plan
+        p_grad = np.zeros_like(p_params)
+        V_p_pi, V_p_pi_grad, var_alpha, cvar_alpha = self.posterior_sampling(p_params, num_samples_plan, risk_threshold)
+        p_grad = np.mean(V_p_pi_grad, axis=0)
+        av_vpi = np.mean(V_p_pi, axis=0)
+        p_params += p_lr * p_grad
+        grad_norm = np.linalg.norm(p_grad)
         self.policy.update_params(p_params)
-        v_alpha_quantile, _ = self.quantile_estimate(v_samples, risk_threshold)
-        cvar_alpha = self.CVaR_estimate(v_samples, risk_threshold)
-        return av_vpi, v_alpha_quantile, cvar_alpha
+        return av_vpi, var_alpha, cvar_alpha, grad_norm
 
     def psrl(self,
             num_samples_plan=None,
@@ -137,22 +145,19 @@ class Agent:
         ):
         p_params = self.policy.get_params()
         R_samp, P_samp = self.sample_mdp()
+        R_samp = np.expand_dims(R_samp, axis=0)
+        P_samp = np.expand_dims(P_samp, axis=0)
         
         for i in range(100):
-            V_p_pi, V_p_pi_grad = jax.value_and_grad(
-                self.policy_performance, 1)(
-                (R_samp, P_samp),
-                p_params
-            )
+            policy = np.array(softmax(p_params))
+            grad_pi = jax.jacrev(softmax)(p_params)
+            _, V_p_pi_grad = calculate_value_and_grad((R_samp, P_samp), grad_pi, policy, self.nState, self.discount, self.initial_distribution)
             # print(f'iter: {i}, Vppi: {V_p_pi}')
-            p_params += p_lr * V_p_pi_grad
+            p_params += p_lr * np.mean(V_p_pi_grad, axis=0)
         
-        self.policy.update_params(jax.lax.stop_gradient(p_params))
-        eps_rel = 0.1
-        significance_level = 0.1
-        cvar_alpha = jax.lax.stop_gradient(self.risk_evaluation_for_grad(self.policy.p_params, eps_rel, significance_level, risk_threshold, num_samples_plan))
-        
-        return jax.lax.stop_gradient(V_p_pi), 0, cvar_alpha
+        self.policy.update_params(p_params)
+        V_p_pi, _, var_alpha, cvar_alpha = self.posterior_sampling(p_params, num_samples_plan, risk_threshold)
+        return np.mean(V_p_pi, axis=0), var_alpha, cvar_alpha, 0
 
     def pg_CE(self,
             num_samples_plan=None,
@@ -161,21 +166,24 @@ class Agent:
             risk_threshold=None
         ):
         p_params = self.policy.get_params()
-        p_grad = jnp.zeros_like(p_params)
+        p_grad = np.zeros_like(p_params)
         R_CE, P_CE = self.get_CE_model()
-        V_p_pi, V_p_pi_grad = jax.value_and_grad(
-            self.policy_performance, 1)(
-            (R_CE, P_CE),
-            p_params
-        )
-        p_grad = V_p_pi_grad
-        av_vpi = V_p_pi
+        R_CE = np.expand_dims(R_CE, axis=0)
+        P_CE = np.expand_dims(P_CE, axis=0)
+
+        policy = np.array(softmax(p_params))
+        grad_pi = jax.jacrev(softmax)(p_params)
+        V_p_pi, V_p_pi_grad = calculate_value_and_grad((R_CE, P_CE), grad_pi, policy, self.nState, self.discount, self.initial_distribution)
+
+        p_grad = np.mean(V_p_pi_grad, axis=0)
+        av_vpi = np.mean(V_p_pi, axis=0)
         p_params += p_lr * p_grad
         self.policy.update_params(p_params)
+        grad_norm = np.linalg.norm(p_grad)
+
+        _, _, v_alpha_quantile, cvar_alpha = self.posterior_sampling(p_params, num_samples_plan, risk_threshold)
         
-        v_alpha_quantile = 0 #placeholder, not sure how to do this one
-        cvar_alpha = 0
-        return av_vpi, v_alpha_quantile, cvar_alpha
+        return av_vpi, v_alpha_quantile, cvar_alpha, grad_norm
 
     def VaR_delta_grad_step(self,
             num_samples_plan=None,
@@ -207,7 +215,7 @@ class Agent:
             p_params += p_lr * p_grad/num_nonzeros
             self.policy.update_params(p_params)
             
-            return av_vpi
+            return av_vpi.item()
         else:
             return 0
 
@@ -256,7 +264,7 @@ class Agent:
         print(num_samples_plan)
         self.policy.update_params(p_params)
 
-        return av_vpi, v_alpha_quantile, cvar_alpha
+        return av_vpi.item(), v_alpha_quantile.item(), cvar_alpha.item()
 
     def CVaR_grad_step(self,
             num_samples_plan=None,
@@ -264,32 +272,98 @@ class Agent:
             p_lr=0.1,
             risk_threshold=None
         ):
+        p_params = self.policy.get_params()
+        U_pi, U_pi_grads, var_alpha, cvar_alpha = self.posterior_sampling(p_params, num_samples_plan, risk_threshold)
+        
+        one_indices = np.nonzero(U_pi<var_alpha)
+        grad_terms = U_pi_grads[one_indices]
+        avg_term = 1./(risk_threshold*num_samples_plan)
+        p_grad = avg_term * np.sum(grad_terms, axis=0) 
+        av_vpi = np.mean(U_pi)
+
+        p_params += p_lr * p_grad
+        grad_norm = np.linalg.norm(p_grad)
+
+        # self.counter += 1
+        # with open(f'grad-cvar/iter_{self.counter}.npy', 'wb') as fh:
+            # np.save(fh, p_grad)
+        #extra bookkeeping for subgradient step
+        # if av_vpi > self.f_best: #not totally correct, have to make sure the next av_Vpi is less than the current one to update
+        #     self.f_best = av_vpi
+        #     self.x_best = p_params
+        self.policy.update_params(p_params)
+        return av_vpi, var_alpha, cvar_alpha, grad_norm
+
+    def psrl_CVaR_constrained(self,
+            optimism_type='psrl',
+            num_samples_plan=None,
+            k_value=0,
+            p_lr=0.1,
+            risk_threshold=None
+            ):
+
+        cvar_constraint = CVAR_CONSTRAINT
+        cvar_alpha = cvar_constraint - 1. #just initialization
+        V_p_pi = 0
+        suggested_p_params = self.policy.get_params()
+        trials = 0
+        while (cvar_alpha < cvar_constraint) and trials < 50:
+            R_samp, P_samp = self.sample_mdp()
+            R_samp = np.expand_dims(R_samp, axis=0)
+            P_samp = np.expand_dims(P_samp, axis=0)
+
+            for i in range(100):
+                suggested_policy = np.array(softmax(suggested_p_params))
+                grad_pi = jax.jacrev(softmax)(suggested_p_params)
+                V_p_pi, V_p_pi_grad = calculate_value_and_grad((R_samp, P_samp), grad_pi, suggested_policy, self.nState, self.discount, self.initial_distribution)
+                print(f'iter: {i}, Vppi: {V_p_pi}, cvar: {cvar_alpha}')
+                suggested_p_params += p_lr * np.mean(V_p_pi_grad, axis=0)
+            
+            V_p_pi, _, var_alpha, cvar_alpha = self.posterior_sampling(suggested_p_params, num_samples_plan, risk_threshold)
+            trials += 1
+
+        self.policy.update_params(suggested_p_params)
+        return np.mean(V_p_pi, axis=0), var_alpha, cvar_alpha, 0
+    
+    # @profile
+    def posterior_sampling(self,
+        p_params,
+        num_samples_plan,
+        risk_threshold
+        ):
         significance_level = 0.1
         eps_rel = 0.1
-        U_pi = []
-        U_pi_grads = []
+
+        U_pi = np.zeros(num_samples_plan)
+        U_pi_grads = np.zeros((num_samples_plan, p_params.shape[0], p_params.shape[1]))#[]
         continue_sampling = True
         total_samples = 0
-        p_params = self.policy.get_params()
         while continue_sampling:
-            for j in range(num_samples_plan):
-                total_samples += 1
-                R_j, P_j = self.sample_mdp()
-                U_pi_j, U_pi_j_grad = jax.value_and_grad(
-                    self.policy_performance, 1)(
-                    (R_j, P_j),
-                    p_params
-                )
-                U_pi.append(U_pi_j)
-                U_pi_grads.append(U_pi_j_grad)
-            L_pi = len(U_pi)
-            sorted_U_pi = jnp.sort(jnp.array(U_pi))
+            R_j, P_j = self.multiple_sample_mdp(num_samples_plan)
+            policy = np.array(softmax(p_params))
+            grad_pi = jax.jacrev(softmax)(p_params)
+
+            U_pi_j, U_pi_j_grad = calculate_value_and_grad((R_j, P_j), grad_pi, policy, self.nState, self.discount, self.initial_distribution)
+            # print(manual_U_grad, U_pi_j_grad)
+            # print(np.isclose(U_pi_j_grad, manual_U_grad, rtol=1e-4))
+            # U_pi[j] = U_pi_j
+            # U_pi_grads[j] = U_pi_j_grad
+            if total_samples == 0:
+                U_pi = U_pi_j
+                U_pi_grads = U_pi_j_grad
+            else:
+                U_pi = np.concatenate((U_pi, U_pi_j), axis=0)
+                U_pi_grads = np.concatenate((U_pi_grads, U_pi_j_grad), axis=0)
+            del R_j, P_j, U_pi_j, U_pi_j_grad
+            total_samples += num_samples_plan
+            L_pi = U_pi.shape[0]
+            sorted_U_pi = np.sort(U_pi)
 
             #find s,r indices
-            mode = int(jnp.floor((L_pi + 1)*risk_threshold))
+            mode = int(np.floor((L_pi + 1)*risk_threshold))
             r = mode
             s = mode
-            prob_r_s_x = lambda r_x, s_x: jnp.sum(jnp.array([comb(L_pi, i)* risk_threshold**i * (1-risk_threshold)**(L_pi - i) for i in range(r_x, s_x)]))
+            prob_r_s_x = lambda r_x, s_x: np.sum(np.array([comb(L_pi, i)* risk_threshold**i * (1-risk_threshold)**(L_pi - i) for i in range(r_x, s_x)]))
             prob_r_s = prob_r_s_x(r, s)
             i = 0
             while (prob_r_s <= 1 - significance_level) and ((s != L_pi - 1) and (r != 0)): #if both have reached the ends of the array, then we have the largest interval and shouldn't keep looping
@@ -300,65 +374,15 @@ class Agent:
                 prob_r_s = prob_r_s_x(r, s)
                 i += 1
             continue_sampling = (sorted_U_pi[s] - sorted_U_pi[r] >= eps_rel * (sorted_U_pi[-1] - sorted_U_pi[0]))
-
+        
         U_pi = np.asarray(U_pi)
         U_pi_grads = np.asarray(U_pi_grads)
-        floor_index = int(jnp.floor(risk_threshold * L_pi))
+        floor_index = int(np.floor(risk_threshold * L_pi))
         var_alpha = sorted_U_pi[floor_index]
-        cvar_alpha = jnp.mean(sorted_U_pi[:floor_index])
-
-        one_indices = np.nonzero(U_pi<var_alpha)
-        grad_terms = U_pi_grads[one_indices]
-        avg_term = 1./(risk_threshold*num_samples_plan)
-        p_grad = avg_term * np.sum(grad_terms, axis=0) 
-        av_vpi = np.mean(U_pi)
-
-        p_params += p_lr * p_grad
-
-        self.counter += 1
-        with open(f'grad-cvar/iter_{self.counter}.npy', 'wb') as fh:
-            np.save(fh, p_grad)
-        #extra bookkeeping for subgradient step
-        # if av_vpi > self.f_best: #not totally correct, have to make sure the next av_Vpi is less than the current one to update
-        #     self.f_best = av_vpi
-        #     self.x_best = p_params
+        cvar_alpha = np.mean(sorted_U_pi[:floor_index])
         print(total_samples)
-        self.policy.update_params(p_params)
-        return av_vpi, var_alpha, cvar_alpha
-
-    def psrl_CVaR_constrained(self,
-            optimism_type='psrl',
-            num_samples_plan=None,
-            k_value=0,
-            p_lr=0.1,
-            risk_threshold=None
-            ):
-
-        eps_rel = 0.1
-        significance_level = 0.1
-        cvar_constraint = CVAR_CONSTRAINT
-        cvar_alpha = cvar_constraint + 1. #just initialization
-
-        suggested_p_params = self.policy.get_params()
-        
-        while cvar_alpha > cvar_constraint:
-            R_samp, P_samp = self.sample_mdp()
-            
-            for i in range(100):
-                V_p_pi, V_p_pi_grad = jax.value_and_grad(
-                    self.policy_performance, 1)(
-                    (R_samp, P_samp),
-                    suggested_p_params
-                )
-                print(f'iter: {i}, Vppi: {V_p_pi}')
-                suggested_p_params += p_lr * V_p_pi_grad
-                # self.policy.update_params(p_params)
-            
-            cvar_alpha = jax.lax.stop_gradient(self.risk_evaluation_for_grad(suggested_p_params, eps_rel, significance_level, risk_threshold, num_samples_plan))
-        
-        self.policy.update_params(suggested_p_params)
-        return V_p_pi, 0, cvar_alpha
-        
+        print(cvar_alpha)
+        return U_pi, U_pi_grads, var_alpha, cvar_alpha
 
     def optimistic_only(self,
             optimism_type='upper-cvar',
@@ -370,71 +394,35 @@ class Agent:
         '''
         optimism_type: 'max', 'upper-cvar'
         '''
-        significance_level = 0.1
-        eps_rel = 0.1
-        U_pi = []
-        U_pi_grads = []
-        continue_sampling = True
-        total_samples = 0
         p_params = self.policy.get_params()
-        while continue_sampling:
-            for j in range(num_samples_plan):
-                total_samples += 1
-                R_j, P_j = self.sample_mdp()
-                U_pi_j, U_pi_j_grad = jax.value_and_grad(
-                    self.policy_performance, 1)(
-                    (R_j, P_j),
-                    p_params
-                )
-                U_pi.append(U_pi_j)
-                U_pi_grads.append(U_pi_j_grad)
-            L_pi = len(U_pi)
-            sorted_U_pi = jnp.sort(jnp.array(U_pi))
-
-            #find s,r indices
-            mode = int(jnp.floor((L_pi + 1)*risk_threshold))
-            r = mode
-            s = mode
-            prob_r_s_x = lambda r_x, s_x: jnp.sum(jnp.array([comb(L_pi, i)* risk_threshold**i * (1-risk_threshold)**(L_pi - i) for i in range(r_x, s_x)]))
-            prob_r_s = prob_r_s_x(r, s)
-            i = 0
-            while (prob_r_s <= 1 - significance_level) and ((s != L_pi - 1) and (r != 0)): #if both have reached the ends of the array, then we have the largest interval and shouldn't keep looping
-                if (r > 0) and (i % 2 == 0):
-                    r = r - 1
-                if (s < L_pi - 1) and (i % 2 == 1):
-                    s = s + 1
-                prob_r_s = prob_r_s_x(r, s)
-                i += 1
-            continue_sampling = (sorted_U_pi[s] - sorted_U_pi[r] >= eps_rel * (sorted_U_pi[-1] - sorted_U_pi[0]))
-
-        U_pi = jnp.asarray(U_pi)
-        U_pi_grads = jnp.asarray(U_pi_grads)
-        floor_index = int(jnp.floor(risk_threshold * L_pi))
-        var_alpha = sorted_U_pi[floor_index]
-        cvar_alpha = jnp.mean(sorted_U_pi[:floor_index])
-
-        av_vpi = jnp.mean(U_pi)
+        U_pi, U_pi_grads, var_alpha, cvar_alpha = self.posterior_sampling(p_params, num_samples_plan, risk_threshold)
+        av_vpi = np.mean(U_pi)
         upper_risk_threshold = 0.4
+
         if optimism_type == 'max':
-            optimistic_grad = U_pi_grads[jnp.argmax(U_pi)] 
+            optimistic_grad = U_pi_grads[np.argmax(U_pi)] 
         elif optimism_type == 'upper-cvar':
             upper_cvar_alpha = self.CVaR_estimate(U_pi, 1 - upper_risk_threshold)
             upper_v_alpha_quantile, _ = self.quantile_estimate(U_pi, 1 - upper_risk_threshold)
-            upper_one_indices = jnp.nonzero(U_pi>upper_v_alpha_quantile)
-            print(upper_one_indices)
+            upper_one_indices = np.nonzero(U_pi>upper_v_alpha_quantile)[0]
             upper_cvar_grad_terms = U_pi_grads[upper_one_indices]
             upper_avg_term = 1./((1-upper_risk_threshold)*num_samples_plan)
-            optimistic_grad = upper_avg_term * jnp.sum(upper_cvar_grad_terms, axis=0)
+            optimistic_grad = upper_avg_term * np.sum(upper_cvar_grad_terms, axis=0)
         else:
             raise NotImplementedError(f'{optimism_type} not implemented')
 
         p_grad = optimistic_grad
-        print(p_grad)
+        grad_norm = np.linalg.norm(p_grad)
+        print(grad_norm)
 
         p_params += p_lr * p_grad
         self.policy.update_params(p_params)
+        del U_pi, U_pi_grads
+        gc.collect()
 
-        return av_vpi, var_alpha, cvar_alpha
+        # print(f'Train_step: {train_step}, Model Value fn: {av_vpi:.3f}, lambda: {self.lambda_param:.3f}, cvar: {cvar_alpha.item():.3f}')
+        return av_vpi, var_alpha, cvar_alpha, grad_norm
+        # return av_vpi, 0, 0, grad_norm
 
     def optimistic_CVaR_constrained(self,
             optimism_type='upper-cvar',
@@ -447,89 +435,48 @@ class Agent:
         optimism_type: 'max', 'optimistic-psrl', 'upper-cvar', 'random'
         '''
 
-        lambda_lr = 0.05
+        lambda_lr = 0.5
         cvar_constraint = CVAR_CONSTRAINT #should be based on the risk_threshold
-
-        significance_level = 0.1
-        eps_rel = 0.1
-        U_pi = []
-        U_pi_grads = []
-        continue_sampling = True
-        total_samples = 0
         p_params = self.policy.get_params()
-        while continue_sampling:
-            for j in range(num_samples_plan):
-                total_samples += 1
-                R_j, P_j = self.sample_mdp()
-                U_pi_j, U_pi_j_grad = jax.value_and_grad(
-                    self.policy_performance, 1)(
-                    (R_j, P_j),
-                    p_params
-                )
-                U_pi.append(U_pi_j)
-                U_pi_grads.append(U_pi_j_grad)
-            L_pi = len(U_pi)
-            sorted_U_pi = jnp.sort(jnp.array(U_pi))
+        U_pi, U_pi_grads, var_alpha, cvar_alpha = self.posterior_sampling(p_params, num_samples_plan, risk_threshold)
 
-            #find s,r indices
-            mode = int(jnp.floor((L_pi + 1)*risk_threshold))
-            r = mode
-            s = mode
-            prob_r_s_x = lambda r_x, s_x: jnp.sum(jnp.array([comb(L_pi, i)* risk_threshold**i * (1-risk_threshold)**(L_pi - i) for i in range(r_x, s_x)]))
-            prob_r_s = prob_r_s_x(r, s)
-            i = 0
-            while (prob_r_s <= 1 - significance_level) and ((s != L_pi - 1) and (r != 0)): #if both have reached the ends of the array, then we have the largest interval and shouldn't keep looping
-                if (r > 0) and (i % 2 == 0):
-                    r = r - 1
-                if (s < L_pi - 1) and (i % 2 == 1):
-                    s = s + 1
-                prob_r_s = prob_r_s_x(r, s)
-                i += 1
-            continue_sampling = (sorted_U_pi[s] - sorted_U_pi[r] >= eps_rel * (sorted_U_pi[-1] - sorted_U_pi[0]))
-
-        U_pi = jnp.asarray(U_pi)
-        U_pi_grads = jnp.asarray(U_pi_grads)
-        floor_index = int(jnp.floor(risk_threshold * L_pi))
-        var_alpha = sorted_U_pi[floor_index]
-        cvar_alpha = jnp.mean(sorted_U_pi[:floor_index])
-
-        one_indices = jnp.nonzero(U_pi<var_alpha)
+        one_indices = np.nonzero(U_pi<var_alpha)
         cvar_grad_terms = U_pi_grads[one_indices]
         avg_term = 1./(risk_threshold*num_samples_plan)
-        constraint_grad = avg_term * jnp.sum(cvar_grad_terms, axis=0) 
-        av_vpi = jnp.mean(U_pi)
+        constraint_grad = avg_term * np.sum(cvar_grad_terms, axis=0) 
+        av_vpi = np.mean(U_pi)
 
         # optimistic_grad = pi_grads[np.argmax(v_samples)] #change
-        upper_risk_threshold = 0.4
+        upper_risk_threshold = risk_threshold
         if optimism_type == 'random':
             optimistic_grad = U_pi_grads[jnp.random.choice(num_samples_plan)] #this is closer to what we do in psrl
         elif optimism_type == 'optimistic-psrl':
             random_idcs = jnp.random.choice(num_samples_plan, size=10)
             optimistic_grad = U_pi_grads[random_idcs][jnp.argmax(U_pi[random_idcs])]
         elif optimism_type == 'max':
-            optimistic_grad = U_pi_grads[jnp.argmax(U_pi)] #this is closer to what we do in psrl
+            optimistic_grad = U_pi_grads[np.argmax(U_pi)] 
         elif optimism_type == 'upper-cvar':
             upper_cvar_alpha = self.CVaR_estimate(U_pi, 1 - upper_risk_threshold)
             upper_v_alpha_quantile, _ = self.quantile_estimate(U_pi, 1 - upper_risk_threshold)
-            upper_one_indices = jnp.nonzero(U_pi>upper_v_alpha_quantile)
+            upper_one_indices = np.nonzero(U_pi>upper_v_alpha_quantile)
             upper_cvar_grad_terms = U_pi_grads[upper_one_indices]
             upper_avg_term = 1./((1-upper_risk_threshold)*num_samples_plan)
-            optimistic_grad = upper_avg_term * jnp.sum(upper_cvar_grad_terms, axis=0)
+            optimistic_grad = upper_avg_term * np.sum(upper_cvar_grad_terms, axis=0)
         else:
             raise NotImplementedError(f'{optimism_type} not implemented')
 
         p_grad = optimistic_grad + self.lambda_param * constraint_grad
 
         p_params += p_lr * p_grad
-        print(p_grad)
+        grad_norm = np.linalg.norm(p_grad)
         self.policy.update_params(p_params)
 
         #update lambda here
         lambda_grad = cvar_alpha - cvar_constraint
         lambda_param_update = self.lambda_param - lambda_lr * lambda_grad
         self.lambda_param = max(0, lambda_param_update) #lambda >= 0
-        print(self.lambda_param)
-        return av_vpi, var_alpha, cvar_alpha
+        print(av_vpi, var_alpha, cvar_alpha, grad_norm)
+        return av_vpi, var_alpha, cvar_alpha, grad_norm
 
     def regret_CVaR_grad_step(self,
             num_samples_plan=None,
@@ -573,7 +520,7 @@ class Agent:
         #     self.f_best = av_vpi
         #     self.x_best = p_params
         self.policy.update_params(p_params)
-        return av_vpi, v_alpha_quantile, cvar_alpha
+        return av_vpi.item(), v_alpha_quantile.item(), cvar_alpha.item()
 
     def quantile_estimate(self, v_samples, alpha):
         sorted_indices = np.argsort(v_samples)
@@ -602,7 +549,7 @@ class Agent:
             np.save(fh, np.array(grad_cvar))
 
         self.policy.update_params(p_params)
-        return 0, 0, cvar
+        return 0, 0, cvar.item()
 
     def risk_evaluation_for_grad(self, p_params, eps_rel, alpha, q, num_samples):
         #loop in parallel sample from posterior
@@ -632,7 +579,7 @@ class Agent:
                     s = s + 1
                 prob_r_s = prob_r_s_x(r, s)
                 i += 1
-            continue_sampling = (sorted_U_pi[s] - sorted_U_pi[r] >= eps_rel * (sorted_U_pi[-1] - sorted_U_pi[0]))
+            continue_sampling = (sorted_U_pi[s] - sorted_U_pi[r] >= eps_rel * (sorted_U_pi[-1] - sorted_U_pi[0])) and (total_samples < 200)
 
         floor_index = int(jnp.floor(q * L_pi))
         # var = sorted_U_pi[floor_index]
@@ -808,4 +755,4 @@ class Agent:
         p_params += p_lr * p_grad
         self.policy.update_params(p_params)
         
-        return av_vpi, v_alpha_quantile, cvar_alpha
+        return av_vpi.item(), v_alpha_quantile.item(), cvar_alpha.item()

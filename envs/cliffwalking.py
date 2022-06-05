@@ -116,12 +116,14 @@ class CliffWalkingEnv(Env):
             new_position = self._limit_coordinates(new_position).astype(int)
         new_state = np.ravel_multi_index(tuple(new_position), self.shape)
         if self._cliff[tuple(new_position)]:
-            return [(1.0, self.start_state_index, -100, False)]
+            # return [(1.0, self.start_state_index, -100, False)]
+            return [(0.8, self.start_state_index, -100, False)]
 
         is_done = False#tuple(new_position) == terminal_state
         r = 1 if tuple(new_position) == terminal_state else -1
 
-        return [(1.0, new_state, r, is_done)]
+        # return [(1.0, new_state, r, is_done)]
+        return [(0.8, new_state, r, is_done)]
 
     def get_name(self):
         return "CliffWalking"

@@ -5,6 +5,7 @@ import jax
 from jax.nn import sigmoid
 from itertools import product
 from replay_buffer import ReplayBuffer
+from memory_profiler import profile
 
 def update_mle(nState, nAction, batch):
     transition_counts = np.zeros((nState, nAction, nState))

@@ -1,6 +1,6 @@
 import csv
 import os
-from re import L
+from re import A, L
 import matplotlib as mpl  # For changing matplotlib arguments
 if os.environ.get('DISPLAY','') == '':
     print('no display found. Using non-interactive Agg backend')
@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt  # For graphing
 import numpy as np
 import copy
 from deploy import get_id
+import ast
+import itertools
 
 class CSVLogger():
     def __init__(self, fieldnames, filename='log.csv'):
@@ -38,18 +40,66 @@ def load_from_csv(path):
     :return:
     """
     # log_loc = 'log.csv'
+    print(path)
     with open(path) as csvfile:
         reader = csv.DictReader(csvfile, skipinitialspace=True)
         data = {name: [] for name in reader.fieldnames}
         for row in reader:
             for name in reader.fieldnames:
                 data[name].append(row[name])
-    index = 150
-    data['av-V-model-pi'] = np.array([float(i.strip()) for i in data['av-V-model-pi']])[:index]
-    data['av-V-env-pi'] = np.array([float(i.strip()) for i in data['av-V-env-pi']])[:index]
-    data['v-alpha-quantile'] = np.array([float(i.strip()) for i in data['v-alpha-quantile']])[:index]
-    data['cvar-alpha'] = np.array([float(i.strip()) for i in data['cvar-alpha']])[:index]
-    data['cvar-constraint-lambda'] = np.array([float(i.strip()) for i in data['cvar-constraint-lambda']])[:index]
+    index = 1500
+    data['av-V-model-pi'] = np.array(
+        list(itertools.chain.from_iterable(
+            [ast.literal_eval(data['av-V-model-pi'][i]) for i in range(len(data['av-V-model-pi']
+            ))]))
+            )
+    data['grad-norm'] = np.array(
+        list(itertools.chain.from_iterable(
+            [ast.literal_eval(data['grad-norm'][i]) for i in range(len(data['grad-norm']
+            ))]))
+            )
+    # data['av-V-model-pi'] = np.array([float(i.strip()) for i in data['av-V-model-pi']])[:index]
+    
+    new_data = np.zeros(len(data['av-V-env-pi']))
+    for i in range(len(data['av-V-env-pi'])):
+        s = data['av-V-env-pi'][i]
+        try:
+            new_data[i] = float(s)
+        except:
+            print(str.split(s, '-'))
+
+    data['av-V-env-pi'] = new_data#np.array([float(i.strip()) for i in data['av-V-env-pi']])[:index]
+
+    # data['v-alpha-quantile'] = np.array([float(i.strip()) for i in data['v-alpha-quantile']])[:index]
+    # data['cvar-alpha'] = np.array([float(i.strip()) for i in data['cvar-alpha']])[:index]
+    
+    data['cvar-alpha'] = np.array(
+        list(itertools.chain.from_iterable(
+            [ast.literal_eval(data['cvar-alpha'][i]) for i in range(len(data['cvar-alpha']
+            ))]))
+            )
+    # new_data = np.zeros(len(data['cvar-alpha']))
+    # for i in range(len(data['cvar-alpha'])):
+    #     s = data['cvar-alpha'][i]
+    #     try:
+    #         new_data[i] = float(s)
+    #     except:
+    #         print(str.split(s, '-'))
+    # data['cvar-alpha'] = new_data
+    data['cvar-constraint-lambda'] = np.array(
+        list(itertools.chain.from_iterable(
+            [ast.literal_eval(data['cvar-constraint-lambda'][i]) for i in range(len(data['cvar-constraint-lambda']
+            ))]))
+            )
+    # new_data = np.zeros(len(data['cvar-constraint-lambda']))
+    # for i in range(len(data['cvar-constraint-lambda'])):
+    #     s = data['cvar-constraint-lambda'][i]
+    #     try:
+    #         new_data[i] = float(s)
+    #     except:
+    #         print(str.split(s, '-'))
+    # data['cvar-constraint-lambda'] = new_data
+    # data['cvar-constraint-lambda'] = np.array([float(i.strip()) for i in data['cvar-constraint-lambda']])[:index]
     return data
 
 def init_ax(fontsize=12, nrows=1, ncols=1):
@@ -103,7 +153,7 @@ def setup_ax(ax, do_legend=True, alpha=0.0, fontsize=6,         legend_loc=None,
     return ax
 
 
-def graph_single(train_types, y_type):
+def graph_single(argss, env_name, y_type, fid):
     """
     :param args:
     :param x_type:
@@ -111,17 +161,16 @@ def graph_single(train_types, y_type):
     :return:
     """
     fig, axs = init_ax()
-    for train_type in train_types:
-        data = load_from_csv(args.save_sub_dir)
+    data = load_from_csv(argss.save_sub_dir)
 
-        axs[0].plot(range(len(data[y_type])), data[y_type], label=f'{train_type}')
+    axs[0].plot(range(len(data[y_type])), data[y_type], label=f'{argss.train_type}')
         
     axs[0].set_xlabel('Iters'), axs[0].set_ylabel(f'Policy performance {y_type}')    
     axs[0].legend(bbox_to_anchor=(1,0.5))
 
     plt.grid(True)
     # plt.show()
-    fig.savefig(f'images/graph_performances_{y_type}.pdf', bbox_inches='tight')
+    fig.savefig(f'images/{env_name}_{fid}_graph_seeds_{y_type}.pdf', bbox_inches='tight')
     plt.close(fig)
 
 

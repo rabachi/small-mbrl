@@ -12,8 +12,10 @@ from deploy import deploy_losses, deploy_MC2PS
 import numpy as np
 import gym
 import pdb
+from memory_profiler import profile
 # SEED = 0
 
+# @profile
 def experiment(args, env):
     # env setup
     nState = 5
@@ -86,9 +88,19 @@ def make_plots(deploy_argss, env_name):
     # deploy_argss = deploy_losses()
     graph_seeds(deploy_argss, env_name, 'av-V-env-pi')
     graph_seeds(deploy_argss, env_name, 'av-V-model-pi')
-    graph_seeds(deploy_argss, env_name, 'v-alpha-quantile')
+    # graph_seeds(deploy_argss, env_name, 'v-alpha-quantile')
+    graph_seeds(deploy_argss, env_name, 'grad-norm')
     graph_seeds(deploy_argss, env_name, 'cvar-alpha')
     graph_seeds(deploy_argss, env_name, 'cvar-constraint-lambda')
+
+def make_plots_single(deploy_argss, env_name, fid):
+    # deploy_argss = deploy_losses()
+    graph_single(deploy_argss, env_name, 'av-V-env-pi', fid)
+    graph_single(deploy_argss, env_name, 'av-V-model-pi', fid)
+    # graph_single(deploy_argss, env_name, 'v-alpha-quantile', fid)
+    graph_single(deploy_argss, env_name, 'grad-norm', fid)
+    graph_single(deploy_argss, env_name, 'cvar-alpha', fid)
+    graph_single(deploy_argss, env_name, 'cvar-constraint-lambda', fid)
 
 def experiment_manual(args):
     # env setup
@@ -142,7 +154,7 @@ if __name__=="__main__":
     # env = Ring(deploy_args.seed)
     # env = Chain(5, 0.2, 0.9, deploy_args.seed)
     # env = State2MDP(deploy_args.seed)
-    # experiment(deploy_args, env)
+    experiment(deploy_args, env)
     # for i in range(1, deploy_args.num_eps):
     #     with open(f'grad-cvar/iter_{i}.npy', 'rb') as f:
     #         grad_cvar_i = np.load(f)
@@ -152,4 +164,5 @@ if __name__=="__main__":
 
     #     print(np.linalg.norm(grad_cvar_i - grad_risk_i))
     env_name = env.get_name()
+    # make_plots_single(deploy_argss[2], env_name, 'reset')
     make_plots(deploy_argss, env_name)

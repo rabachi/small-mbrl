@@ -34,13 +34,31 @@ def value_iteration(nState: int, nAction: int, discount_factor, r_matrix: np.nda
         pi[s][np.argmax(r_matrix[s] + np.einsum('at,t->a', p_matrix[s], discount_factor * V))] = 1
     return V, pi
 
+def policy_evaluation(env, policy, num_episodes_eval, num_steps, discount_factor):
+    nState = env.nState
+    v = np.zeros(nState)
+    for s in range(nState):
+        v_eps = np.zeros(num_episodes_eval)
+        env.reset_to_state(s)
+        for ep in range(num_episodes_eval):
+            rewards = []
+            for step in range(num_steps):
+                action = np.argmax(policy[s]) #only for optimal policy
+                next_state, reward, done, _ = env.step(action)
+                state = next_state
+                rewards.append(reward) 
+            returns = discount(rewards, discount_factor)#env.discount)
+            v_eps[ep] = returns[0]
+        v[s] = np.mean(v_eps)
+    return v
+
 def experiment():
     prob_slip = 0.2
     nState = 5
     discount_factor = 0.99
 
-    env = Chain(nState, prob_slip, discount_factor, SEED)
-    # env = CliffWalkingEnv(SEED)
+    # env = Chain(nState, prob_slip, discount_factor, SEED)
+    env = CliffWalkingEnv(SEED)
     # env = Ring(SEED)
     # env = State2MDP(SEED)
     # env = GarnetMDP(2, 2, (2,2))
@@ -48,6 +66,7 @@ def experiment():
 
     num_points_per_sa = 1000
     num_repeats = 200
+    num_episodes_eval = 100
 
     nState = env.nState
     nAction = env.nAction
@@ -56,7 +75,8 @@ def experiment():
     for m in range(num_repeats):
         data_m = collect_sa(rng, env, nState, nAction, num_points_per_sa)
         mle_transitions, mle_rewards = update_mle(nState, nAction, data_m.sample(len(data_m)))
-        v_pi_star, pi_star = value_iteration(nState, nAction, discount_factor, mle_rewards, mle_transitions)
+        _, pi_star = value_iteration(nState, nAction, discount_factor, mle_rewards, mle_transitions)
+        v_pi_star = policy_evaluation(env, pi_star, num_episodes_eval, int(1/(1 - discount_factor)), discount_factor)#env.discount)))
         values[m] = env.initial_distribution @ v_pi_star
 
     file = f'data/values_{env.get_name()}_numpoints{num_points_per_sa}_numrepeats{num_repeats}.npy'

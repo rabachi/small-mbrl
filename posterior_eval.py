@@ -137,7 +137,7 @@ def experiment():
     # # policies['optimal'] = softmax(rng.standard_normal(size=(nState, nAction)))
     # policies['true-optimal'] = pi_opt
     
-    num_points_ablation = [1000] #1, 10, 100, 1000
+    num_points_ablation = [10000] #1, 10, 100, 1000
     num_model_samples = 200
     # nEps = 10000
     num_points_per_sa = num_points_ablation[0]

@@ -53,6 +53,17 @@ class DirichletModel(Agent):
             r_matrix[s, a] = R[s, a]
         return r_matrix, p_matrix
 
+    def get_matrix_priors(self, R: Dict, P: Dict) -> Tuple[np.ndarray]:
+        alphas = np.zeros((self.nState, self.nAction, self.nState))
+        mus = np.zeros((self.nState, self.nAction))
+        taus = np.zeros((self.nState, self.nAction))
+
+        for s, a in P.keys():
+            alphas[s, a, :] = self.P_prior[s, a]
+            mus[s, a] = self.R_prior[s, a][0]
+            taus[s, a] = self.R_prior[s, a][1]
+        return mus, taus, alphas
+
     def sample_mdp(self):
         R_samp = {}
         P_samp = {}
@@ -66,6 +77,15 @@ class DirichletModel(Agent):
         R_samp_, P_samp_ = self.get_matrix_PR(R_samp, P_samp)
         return R_samp_, P_samp_
 
+    def multiple_sample_mdp(self, num_samples):
+        R_samp = np.zeros((num_samples, self.nState, self.nAction))
+        P_samp = np.zeros((num_samples, self.nState, self.nAction, self.nState))
+        mus, taus, alphas = self.get_matrix_priors(self.R_prior, self.P_prior)
+        for s in range(self.nState):
+            for a in range(self.nAction):
+                R_samp[:, s, a] = mus[s,a] + self.rng.normal(size=num_samples) * 1./np.sqrt(taus[s,a])
+                P_samp[:, s,a] = self.rng.dirichlet(alphas[s,a,:], size=num_samples)
+        return R_samp, P_samp
     # def update_CE_model(self, R_samp: np.ndarray, P_samp: np.ndarray, num_samp: int):
     #     curr_R, curr_P = self.CE_model
     #     next_R = curr_R + (R_samp - curr_R)/num_samp
