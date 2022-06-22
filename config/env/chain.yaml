@@ -1,0 +1,9 @@
+env_setup: 
+  _target_: envs.chain.Chain
+  nState: 5
+  prob_slip: 0.2
+  discount: 0.99
+  seed: ${seed}
+
+env_name: chain
+traj_len: 100

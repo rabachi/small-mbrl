@@ -122,8 +122,8 @@ class CliffWalkingEnv(Env):
         is_done = False#tuple(new_position) == terminal_state
         r = 1 if tuple(new_position) == terminal_state else -1
 
-        # return [(1.0, new_state, r, is_done)]
-        return [(0.8, new_state, r, is_done)]
+        return [(1.0, new_state, r, is_done)]
+        # return [(0.8, new_state, r, is_done)]
 
     def get_name(self):
         return "CliffWalking"
@@ -141,7 +141,12 @@ class CliffWalkingEnv(Env):
         return self.initial_state_distrib
 
     def step(self, a):
-        transitions = self.P[self.s][a]
+        # transitions = self.P[self.s][a]
+        action_prob = 0.4
+        a_probs = np.ones(self.nAction) * (1-action_prob)/(self.nAction-1)
+        a_probs[a] = action_prob
+        a_real = self.rng.multinomial(1, a_probs).nonzero()[0][0]
+        transitions = self.P[self.s][a_real]
         i = self.rng.multinomial(1, [t[0] for t in transitions]).nonzero()[0][0]
         p, s, r, d = transitions[i]
         self.s = s

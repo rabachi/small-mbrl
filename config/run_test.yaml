@@ -1,0 +1,33 @@
+defaults:
+  - train_type: upper-cvar-opt-cvar
+  - env: FrozenLake
+  - _self_
+
+  # env_name: chain
+  #FrozenLake4x4
+  # traj_len: 100
+
+init_lambda: 0.5
+reset_params: true
+
+num_samples_plan: 200
+num_eps_eval: 10
+num_eps: 150
+
+risk_threshold: 0.1
+k_value: 4
+log_freq: 1
+eps_rel: 0.1
+significance_level: 0.1
+temperature: 1
+sigma: 'CVaR' #only for MC2PS
+num_models: 10 #only for MC2PS
+num_discounts: 10 #only for MC2PS
+
+seed: 1
+hydra_dir_end: default
+
+hydra:
+  run:
+    dir: /scratch/gobi1/abachiro/small_mbrl_results/exp/${train_type.type}_${env.env_name}
+    #should add slurm job id

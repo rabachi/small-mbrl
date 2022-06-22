@@ -14,7 +14,6 @@ def make_parser():
                         help='If we should store diagnostic info.')
     parser.add_argument('--save_dir', default='/scratch/gobi1/abachiro/small-mbrl/data',
                         help='Where to store diagnostic info.')
-
     parser.add_argument('--policy_lr', default=0.1,
                         help='Policy learning rate.')
     parser.add_argument('--model_lr', default=0.01,
@@ -90,20 +89,20 @@ def get_id(args):
     """
     # TODO: Make these in a sensible order, so readable
     args_id = ''
-    args_id += f'train_type={args.train_type}_'
-    args_id += f'seed={args.seed}'
-    args_id += f'risk_threshold={args.risk_threshold}_'
-    args_id += f'policy_lr={args.policy_lr}_'
-    args_id += f'num_samples_plan={args.num_samples_plan}_'
+    args_id += f'train_type{args.train_type}_'
+    args_id += f'seed{args.seed}'
+    args_id += f'risk_threshold{args.risk_threshold}_'
+    args_id += f'policy_lr{args.policy_lr}_'
+    args_id += f'num_samples_plan{args.num_samples_plan}_'
     # args_id += f'num_eps={args.num_eps}_'
-    args_id += f'traj_len={args.traj_len}_'
-    args_id += f'k_value={args.k_value}_'
-    args_id += f'log_freq={args.log_freq}_'
-    args_id += f'num_eps_eval={args.num_eps_eval}_'
+    args_id += f'traj_len{args.traj_len}_'
+    args_id += f'k_value{args.k_value}_'
+    args_id += f'log_freq{args.log_freq}_'
+    args_id += f'num_eps_eval{args.num_eps_eval}_'
     return args_id
 
 
-def deploy_losses():
+def deploy_losses(env_name, constraint):
     """
 
     :return:
@@ -112,62 +111,44 @@ def deploy_losses():
     args, _ = parser.parse_known_args()
     argss = []
     train_types = [
-        # # 'VaR-sigmoid',
-        # # 'VaR-delta',
         'max-opt', #opt only
         'upper-cvar', #opt only
-        'psrl-opt-cvar', #opt + constraint
-        'max-opt-cvar', #opt + constraint
-        # 'optimistic-psrl-opt-cvar', #incorrect
+        'psrl-opt-cvar', #opt + constraint up to seed 8 (exclusive) here
+        'max-opt-cvar', #opt + constraint missing 2+ below
         'upper-cvar-opt-cvar', #opt + constraint
-        'CVaR', #risk only
-        # 'grad-risk-eval',
-        # 'regret-CVaR',
-        # 'robust-DP',
-        # 'k-of-N',
-        'pg', 
-        'pg-CE',
+        # 'CVaR', #risk only
+        # 'pg', 
+        # 'pg-CE',
         'psrl' #opt only
     ]
-    # train_types = [
-    #     'max-opt', #opt only
-    #     'upper-cvar', #opt only
-    #     'psrl-opt-cvar', #opt + constraint
-    #     'max-opt-cvar', #opt + constraint
-    #     'upper-cvar-opt-cvar', #opt + constraint
-    #     # 'CVaR', #risk only
-    #     # 'pg', 
-    #     # 'pg-CE',
-    #     'psrl' #opt only
-    # ]
-    seeds = range(3)#[1,2,4]##range(15) #[17, 3, 11, 19, 23]#13, 2, 0, 5, 123,  #[23]#698793, 47, 4139,  48784127, 41]#, 17, 13, 698793, 47, 4139]
+    seeds = range(5)#[1,2,3,4]#range(1,5)#range(2,5) #range(2,10)#range(1)#range(2,10)#range(1) 
     for train_type in train_types:
         for seed in seeds:
             new_args = copy.deepcopy(args)
             new_args.model_lr = 0.01
-            new_args.policy_lr = 0.1
-            # new_args.policy_lr = 0.01 if train_type in ['max-opt-cvar', 'upper-cvar-opt-cvar'] else 0.1
-        #     new_args.policy_lr = 0.01 if train_type in ['psrl-opt-cvar',
-        # 'max-opt-cvar',
-        # 'optimistic-psrl-opt-cvar',
-        # 'upper-cvar-opt-cvar'] else 0.1
+            new_args.policy_lr = 0.25  #0.1
             new_args.num_samples_plan = 200
             new_args.num_eps = 10 if train_type=='VaR-delta' else 150
             new_args.train_type = train_type
-            new_args.traj_len = 100
+            if env_name == 'chain':
+                new_args.traj_len = 10
+            # elif env_name == 'FL':
+            #     new_args.traj_len = 100
+            else:
+                new_args.traj_len = 100
             new_args.risk_threshold = 0.1
             new_args.k_value = 4
             new_args.log_freq = 1
             new_args.num_eps_eval = 10
             new_args.seed = seed
-            # new_args.save_sub_dir = new_args.save_dir + '/' + 'state2mdp-' + get_id(new_args)
-            # new_args.save_sub_dir = new_args.save_dir + '/' + 'cliffwalking-' + get_id(new_args)
-            # new_args.save_sub_dir = new_args.save_dir + '/' + 'Frozenlake-constraint-1-midtrainsteps-100-' + get_id(new_args)
-            
-            # new_args.save_sub_dir = new_args.save_dir + '/' + 'Frozenlake-constraint-1-nonreset-midtrainsteps-50-upper0.4-' + get_id(new_args)
-            # new_args.save_sub_dir = new_args.save_dir + '/' + 'Frozenlake-constraint-1-midtrainsteps-50-upper0.4-' + get_id(new_args)
+            # new_args.save_sub_dir = new_args.save_dir + '/' + 'Chain-' + get_id(new_args)
 
-            new_args.save_sub_dir = new_args.save_dir + '/' + 'Frozenlake-constraint-2-' + get_id(new_args)
+            # new_args.save_sub_dir = new_args.save_dir + '/' + 'final-FL-constraint-1pt5-' + get_id(new_args)
+            # new_args.save_sub_dir = new_args.save_dir + '/' + 'vwsRFLconstraint-1pt5-' + get_id(new_args)
+
+            # ######################### SACRED ONES: ########################################
+            # # new_args.save_sub_dir = new_args.save_dir + '/' + 'CliffWalking-constraint-20-actionprob0.4-' + get_id(new_args)
+            new_args.save_sub_dir = new_args.save_dir + '/' + f'{env_name}-' + get_id(new_args)
             argss += [new_args]
     return argss
 

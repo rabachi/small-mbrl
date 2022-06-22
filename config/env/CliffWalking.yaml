@@ -1,0 +1,6 @@
+env_setup:
+  _target_: envs.cliffwalking.CliffWalkingEnv
+  seed: ${seed}
+
+env_name: CliffWalking
+traj_len: 10

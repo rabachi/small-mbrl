@@ -1,0 +1,8 @@
+env_setup:
+  _target_: envs.randomfrozenlake.RandomFrozenLakeEnv
+  seed: ${seed}
+  is_slippery: true
+  map_name: null
+
+env_name: FrozenLake4x4
+traj_len: 100

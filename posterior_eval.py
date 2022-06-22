@@ -57,7 +57,7 @@ def plot_env_model_distribution(agent, env_name, num_samples, num_points_per_sa,
     plt.ylabel('P_p(V_p^pi)')
     plt.title(f'{env_name}, alpha0: {alpha0}, Number of points per transition: {num_points_per_sa}')
     plt.legend()
-    fig.savefig(f'images/dists/V_P_dist_{env_name}_per_sa_{num_points_per_sa}_alpha0_{alpha0}.pdf', bbox_inches='tight')
+    fig.savefig(f'images/dists/V_P_dist_{env_name}_per_sa_{num_points_per_sa}_alpha0_{alpha0}_actionprob0.4.pdf', bbox_inches='tight')
     # fig.savefig(f'images/env_dist_{env.get_name()}.pdf', bbox_inches='tight')
     plt.close(fig)
 
@@ -137,7 +137,7 @@ def experiment():
     # # policies['optimal'] = softmax(rng.standard_normal(size=(nState, nAction)))
     # policies['true-optimal'] = pi_opt
     
-    num_points_ablation = [10000] #1, 10, 100, 1000
+    num_points_ablation = [1000] #1, 10, 100, 1000
     num_model_samples = 200
     # nEps = 10000
     num_points_per_sa = num_points_ablation[0]

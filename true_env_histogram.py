@@ -66,20 +66,21 @@ def experiment():
 
     num_points_per_sa = 1000
     num_repeats = 200
-    num_episodes_eval = 100
+    num_episodes_eval = 10
 
     nState = env.nState
     nAction = env.nAction
-    
+
     values = np.zeros(num_repeats)
     for m in range(num_repeats):
+        print(m)
         data_m = collect_sa(rng, env, nState, nAction, num_points_per_sa)
         mle_transitions, mle_rewards = update_mle(nState, nAction, data_m.sample(len(data_m)))
         _, pi_star = value_iteration(nState, nAction, discount_factor, mle_rewards, mle_transitions)
         v_pi_star = policy_evaluation(env, pi_star, num_episodes_eval, int(1/(1 - discount_factor)), discount_factor)#env.discount)))
         values[m] = env.initial_distribution @ v_pi_star
 
-    file = f'data/values_{env.get_name()}_numpoints{num_points_per_sa}_numrepeats{num_repeats}.npy'
+    file = f'data/values_{env.get_name()}_numpoints{num_points_per_sa}_numrepeats{num_repeats}_actionprob_0.4.npy'
     np.save(file, values)
     num_bins = 50
     fig = plt.figure()

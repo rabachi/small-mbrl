@@ -11,8 +11,8 @@ from src.agent import Agent
 
 # Dirichlet model
 class DirichletModel(Agent):
-    def __init__(self, nState, nAction, seed, discount, initial_distribution, alpha0=1., mu0=0.,
-                 tau0=1., tau=1., **kwargs):
+    def __init__(self, nState, nAction, seed, discount, initial_distribution, init_lambda, lambda_lr, policy_lr, alpha0=1., mu0=0.,
+                 tau0=1., tau=1.):
         self.nState = nState
         self.nAction = nAction
         # self.epLen = epLen
@@ -22,9 +22,10 @@ class DirichletModel(Agent):
         self.tau = tau
         self.discount = discount
         self.initial_distribution = initial_distribution
+        self.constraint = -1. #placeholder value, set dynamically later
         temp = 1.0
         self.policy = Policy(nState, nAction, temp, seed, p_params=None)
-        super().__init__(self.nState, self.discount, self.initial_distribution, self.policy)
+        super().__init__(self.nState, self.discount, self.initial_distribution, self.policy, init_lambda, lambda_lr, policy_lr)
 
         self.R_prior = {}
         self.P_prior = {}

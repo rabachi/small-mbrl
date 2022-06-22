@@ -5,7 +5,13 @@ import jax
 from jax.nn import sigmoid
 from itertools import product
 from replay_buffer import ReplayBuffer
-from memory_profiler import profile
+# from memory_profiler import profile
+
+def similar(L):
+    return all(np.isclose(x, y, rtol=1e-1) for x,y in zip(L[-10:], L[-9:]))
+    
+def non_decreasing(L):
+    return all((x<y) or np.isclose(x,y,rtol=1.) for x, y in zip(L, L[1:]))
 
 def update_mle(nState, nAction, batch):
     transition_counts = np.zeros((nState, nAction, nState))

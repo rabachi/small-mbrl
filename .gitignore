@@ -4,6 +4,9 @@
 /data/
 /images/
 /slurm_out/
+/outputs/
 *__pycache__
 /grad-cvar/
-
+*.png
+*.dat
+*.pyc
