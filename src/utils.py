@@ -115,6 +115,25 @@ def discount(rewards, discount_factor) -> np.ndarray:
 def vmap_sigmoid(x):
     return jax.vmap(sigmoid, in_axes=0, out_axes=0)(x)
 
+def get_log_policy(p_params, n_states, n_actions, temp):
+    """
+
+    :param p_params:
+    :return:
+    """
+    return log_softmax(p_params.reshape(n_states, n_actions), temp)#.reshape(-1,)
+    
+def get_policy(p_params, nState, nAction):
+    return softmax(p_params.reshape(nState, nAction), 1.0)
+
+def log_softmax(vals, temp=1.):
+    """Same function as softmax but not exp'd
+        Args:
+            vals : S x A. Applied row-wise
+            temp (float, optional): Defaults to 1.. Temperature parameter
+        Returns:
+        """
+    return (1. / temp) * vals - logsumexp((1. / temp) * vals, axis=1, keepdims=True)
 
 def softmax(vals, temp=1.):
     """Batch softmax

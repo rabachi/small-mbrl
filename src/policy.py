@@ -14,10 +14,10 @@ class Policy:
         self.nAction = nAction
         self.temp = temp
 
-        if not p_params:
-            p_params = jnp.ones((self.nState, self.nAction)) * 0.01
-        self.p_params = p_params
         self.rng = np.random.RandomState(int(seed))
+        if not p_params:
+            p_params = jnp.ones((self.nState * self.nAction)) * self.rng.normal(0, 1, size=(self.nState * self.nAction))
+        self.p_params = p_params
 
     def __call__(self, curr_state):
         action_probs = softmax(self.p_params.reshape(self.nState, self.nAction), self.temp)[curr_state]
@@ -33,7 +33,7 @@ class Policy:
         self.p_params = np.clip(p_params, -5., 5.0)
     
     def reset_params(self):
-        self.p_params = jnp.ones((self.nState, self.nAction)) * 0.01
+        self.p_params = jnp.ones((self.nState * self.nAction)) * self.rng.normal(0, 1, size=(self.nState * self.nAction))
 
     def get_policy(self, p_params):
         return softmax(p_params.reshape(self.nState, self.nAction), self.temp)

@@ -272,9 +272,11 @@ def graph_seeds2(main_dirs, num_seeds, y_type):
 
     data_by_seed = {}
     for dir in main_dirs:
-        train_type, env = dir.split('/')[-1].split('_')
+        dir_list = dir.split('/')[-1].split('_')
+        train_type = dir_list[0]
+        env = dir_list[1]
         print(train_type)
-        for seed in range(num_seeds):
+        for seed in [0,1,3,4]:#range(num_seeds):
             if train_type not in data_by_seed:
                 data_by_seed[train_type] = {}
             data = load_from_csv(os.path.join(dir, f'seed_{seed}'))

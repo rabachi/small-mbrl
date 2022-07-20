@@ -1,4 +1,5 @@
 import numpy as np
+# from regex import F
 import torch
 import jax.numpy as jnp
 from jax.scipy.linalg import lu_factor, lu_solve
@@ -8,16 +9,13 @@ from typing import List, Tuple, Dict
 from scipy.special import comb
 import pickle
 # from memory_profiler import profile
-from src.utils import softmax
+from src.utils import softmax, get_log_policy, get_policy
 import gc
 
 # CVAR_CONSTRAINT = -1.5 #RFL
 # CVAR_CONSTRAINT = -4.0 #cliffwalking
 # CVAR_CONSTRAINT = -10.0 #cliffwalking
 # CVAR_CONSTRAINT = 30.0 #Chain
-
-def get_policy(p_params, nState, nAction):
-    return softmax(p_params.reshape(nState, nAction), 1.0)
 
 def policy_evaluation(mdp: Tuple[np.ndarray], policy: jnp.ndarray, nState, discount): 
     # Vals[state, timestep]
@@ -28,8 +26,7 @@ def policy_evaluation(mdp: Tuple[np.ndarray], policy: jnp.ndarray, nState, disco
                             discount*ppi, rpi)
     return v_pi
 
-def policy_performance(r, p, policy_params, initial_distribution, nState, discount):
-    nAction = policy_params.shape[1]
+def policy_performance(r, p, policy_params, initial_distribution, nState, nAction, discount):
     policy = get_policy(policy_params, nState, nAction)
     vf = policy_evaluation((r, p), policy, nState, discount)
     return initial_distribution @ vf
@@ -92,7 +89,7 @@ class Agent:
         V = np.zeros(self.nState)
         #V_progress = [np.zeros(self.nState)] * 3
         delta = np.infty
-    
+
         i = 0
         while delta > epsilon:
             for s in range(self.nState):
@@ -157,6 +154,12 @@ class Agent:
         else:
             raise NotImplementedError(f'Not implemented this type: {train_type}')
 
+    def backtrackingls(self, alpha0, c, rho, grad_f, f, x_k):
+        alpha = alpha0
+        while f(x_k + alpha * grad_f) < f(x_k) + c * alpha * 0.5* np.linalg.norm(grad_f)**2:
+            alpha = rho * alpha
+        return alpha
+
     def pg(self,
             num_samples_plan,
             k_value,
@@ -167,10 +170,29 @@ class Agent:
         V_p_pi, V_p_pi_grad, var_alpha, cvar_alpha = self.posterior_sampling(p_params, num_samples_plan, risk_threshold)
         p_grad = np.mean(V_p_pi_grad, axis=0)
         av_vpi = np.mean(V_p_pi, axis=0)
-        p_params += self.policy_lr * p_grad
+
+        use_fim = True
+        if not use_fim:
+            lr = 2.
+            lr = self.backtrackingls(lr, 0.1, 0.8, p_grad, lambda p: np.mean(self.posterior_sampling(p, num_samples_plan, risk_threshold)[0]), p_params)
+            print(lr)
+            p_params += lr * p_grad
+        else:
+            fim = self.calc_FIM(p_params)
+            step = np.linalg.solve(fim, p_grad)
+            p_params += self.policy_lr * step
+        
         grad_norm = np.linalg.norm(p_grad)
         self.policy.update_params(p_params)
         return av_vpi, var_alpha, cvar_alpha, grad_norm
+
+    def calc_FIM(self, p_params):
+        policy = get_policy(p_params, self.nState, self.nAction)
+        grad_log_pi = jax.jacrev(get_log_policy)(p_params, self.nState, self.nAction, 1.0)
+        gradsouter = np.einsum('sat,sap->satp', grad_log_pi, grad_log_pi)
+        F_s_theta = np.einsum('sa,satp->stp', policy, gradsouter)
+        F_theta = np.einsum('s,stp->tp', self.initial_distribution, F_s_theta)
+        return F_theta + 0.01 * np.eye(p_params.shape[0])
 
     def psrl(self,
             num_samples_plan,
@@ -352,7 +374,7 @@ class Agent:
         while not np.isclose(np.linalg.norm(V_p_pi_grad),0.0, atol=1e-2) and i <= 10000:
             if (i + 1) % 2500 == 0:
                 self.policy_lr /= 10.
-            V_p_pi, V_p_pi_grad = jax.lax.stop_gradient(jax.value_and_grad(policy_performance, 2)(R_samp, P_samp, suggested_p_params, self.initial_distribution, self.nState, self.discount))
+            V_p_pi, V_p_pi_grad = jax.lax.stop_gradient(jax.value_and_grad(policy_performance, 2)(R_samp, P_samp, suggested_p_params, self.initial_distribution, self.nState, self.nAction, self.discount))
             print(f'iter: {i}, Vppi: {V_p_pi}, cvar: {cvar_alpha}')
             suggested_p_params += self.policy_lr * np.mean(V_p_pi_grad, axis=0)
             i+=1
@@ -369,7 +391,7 @@ class Agent:
             while not np.isclose(np.linalg.norm(V_p_pi_grad),0.0, atol=1e-2) and i <= 1000: 
                 # suggested_policy = np.array(softmax(suggested_p_params))
                 # grad_pi = jax.jacrev(softmax)(suggested_p_params)
-                V_p_pi, V_p_pi_grad = jax.lax.stop_gradient(jax.value_and_grad(policy_performance, 2)(R_samp, P_samp, suggested_p_params, self.initial_distribution, self.nState, self.discount))
+                V_p_pi, V_p_pi_grad = jax.lax.stop_gradient(jax.value_and_grad(policy_performance, 2)(R_samp, P_samp, suggested_p_params, self.initial_distribution, self.nState, self.nAction, self.discount))
                 print(f'iter: {i}, Vppi: {V_p_pi}, cvar: {cvar_alpha}')
                 suggested_p_params += self.policy_lr * np.mean(V_p_pi_grad, axis=0)
                 i+=1
@@ -393,12 +415,12 @@ class Agent:
         significance_level = 0.1
         eps_rel = 0.1
         U_pi = np.zeros(num_samples_plan)
-        U_pi_grads = np.zeros((num_samples_plan, p_params.shape[0], p_params.shape[1]))#[]
+        U_pi_grads = np.zeros((num_samples_plan, self.nState, self.nAction))#[]
         continue_sampling = True
         total_samples = 0
-        vmap_calc_value_and_grad = jax.vmap(calculate_value_and_grad, in_axes=(0,0,None,None,None,None, None))
+        vmap_calc_value_and_grad = jax.vmap(calculate_value_and_grad, in_axes=(0,0,None,None,None,None,None))
         grad_perf = jax.value_and_grad(policy_performance, 2)
-        vmap_grad = jax.vmap(grad_perf, in_axes=(0,0,None,None,None,None))
+        vmap_grad = jax.vmap(grad_perf, in_axes=(0,0,None,None,None,None,None))
         while continue_sampling:
             R_j, P_j = self.multiple_sample_mdp(num_samples_plan)
             # policy = softmax(p_params)
@@ -406,7 +428,7 @@ class Agent:
 
             # U_pi_j, U_pi_j_grad = jax.lax.stop_gradient(vmap_calc_value_and_grad(R_j, P_j, grad_pi, policy, self.nState, self.discount, self.initial_distribution))
 
-            U_pi_j, U_pi_j_grad = jax.lax.stop_gradient(vmap_grad(R_j, P_j, p_params, self.initial_distribution, self.nState, self.discount))
+            U_pi_j, U_pi_j_grad = jax.lax.stop_gradient(vmap_grad(R_j, P_j, p_params, self.initial_distribution, self.nState, self.nAction, self.discount))
 
             U_pi_j = np.asarray(U_pi_j)
             U_pi_j_grad = np.asarray(U_pi_j_grad)

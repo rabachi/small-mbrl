@@ -59,7 +59,7 @@ def experiment(args):
         args.init_lambda,
         args.train_type.lambda_lr,
         args.train_type.policy_lr
-        )
+    )
 
     trainer = MBRLLoop(env, agent, nState, nAction, initial_distribution, data_dir)
 

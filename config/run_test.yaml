@@ -10,7 +10,7 @@ defaults:
 init_lambda: 0.5
 reset_params: true
 
-num_samples_plan: 200
+num_samples_plan: 500
 num_eps_eval: 10
 num_eps: 150
 
@@ -29,5 +29,5 @@ hydra_dir_end: default
 
 hydra:
   run:
-    dir: /scratch/gobi1/abachiro/small_mbrl_results/exp/${train_type.type}_${env.env_name}
+    dir: /scratch/gobi1/abachiro/small_mbrl_results/exp/${train_type.type}_${env.env_name}_cvarfirst
     #should add slurm job id

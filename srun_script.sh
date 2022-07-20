@@ -15,4 +15,4 @@ module load cuda-11.1
 
 echo "${SLURM_ARRAY_TASK_ID}"
 
-python main2.py train_type='upper-cvar' env='FrozenLake' hydra_dir_end=${SLURM_JOB_ID} seed=${SLURM_ARRAY_TASK_ID}
+python main2.py train_type='pg' env='FrozenLake' hydra_dir_end=${SLURM_JOB_ID} seed=${SLURM_ARRAY_TASK_ID}

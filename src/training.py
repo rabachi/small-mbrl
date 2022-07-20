@@ -60,7 +60,7 @@ class MBRLLoop():
                         args.eps_rel, 
                         args.significance_level, 
                         args.risk_threshold 
-                        )
+                    )
                     vf_model = 0
                     env_returns = self.evaluate_agent(args.num_eps_eval, args.env.traj_len)#_exact()
                     # regret, bayesian_regret = self.regret_evaluate_agent()
@@ -85,14 +85,14 @@ class MBRLLoop():
 
                 if (args.train_type.type in ['upper-cvar', 'max-opt', 'pg', 'pg-CE', 'CVaR']):
                     grad_norm = 5.0 #just a random number to start with
-                    while not np.isclose(grad_norm, 0.0, atol=1e-2):
+                    while not np.isclose(grad_norm, 0.0, atol=5e-3):
                     # for train_step in range(args.mid_train_steps):
                         (
                             vf_model,
                             v_alpha_quantile,
                             cvar_alpha, 
                             grad_norm
-                            ) = self.agent.grad_step(
+                        ) = self.agent.grad_step(
                             args.train_type.type, 
                             **{
                                 'num_samples_plan': args.num_samples_plan,
@@ -111,7 +111,7 @@ class MBRLLoop():
                             v_alpha_quantile,
                             cvar_alpha, 
                             grad_norm
-                            ) = self.agent.grad_step(
+                        ) = self.agent.grad_step(
                             args.train_type.type, 
                             **{
                                 'num_samples_plan': args.num_samples_plan,
@@ -153,7 +153,7 @@ class MBRLLoop():
                     # print(f'lambda: {self.agent.lambda_param}, cvar: {cvar_alpha}')
                     print(f'Ep: {ep}, Model Value fn: {vf_model:.3f}, grad_norm: {grad_norm:.3f}, cvar: {cvar_alpha:.3f}')
                 else:
-                    unconstrained_train_type = 'upper-cvar' if args.train_type.type=='upper-cvar-opt-cvar' else 'max-opt'
+                    unconstrained_train_type = 'CVaR' #'upper-cvar' if args.train_type.type=='upper-cvar-opt-cvar' else 'max-opt'
                     unconstrained_cvars = []
                     self.agent.policy_lr = 100.
                     u = 0
@@ -175,9 +175,9 @@ class MBRLLoop():
                         print(f'u: {u}, lambda: {self.agent.lambda_param:.3f}, grad_norm: {grad_norm:.3f}, cvar: {cvar_alpha:.3f}' )
                         unconstrained_cvars.append(cvar_alpha)
                         u += 1
-                    mean_cvar = sum(unconstrained_cvars)/len(unconstrained_cvars)
-                    self.agent.constraint = mean_cvar
-                    print('New Constraint:', mean_cvar)
+                    max_cvar = np.max(np.asarray(unconstrained_cvars)) #sum(unconstrained_cvars)/len(unconstrained_cvars)
+                    self.agent.constraint = max_cvar
+                    print('New Constraint:', max_cvar)
                     cvar_alphas = []
                     grad_norm = 5.
                     self.agent.policy_lr = args.train_type.policy_lr

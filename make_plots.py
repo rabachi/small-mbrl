@@ -28,10 +28,15 @@ def make_plots_seeds(main_dirs, num_seeds):
 
 if __name__ == "__main__":
     path_to_exp = '/scratch/gobi1/abachiro/small_mbrl_results/exp/'
-    exps = ['max-opt', 'max-opt-cvar']
-    env = 'FrozenLake4x4'
+    # exps = ['max-opt', 'max-opt-cvar', 'upper-cvar','upper-cvar-opt-cvar', 'pg', 'psrl', 'CVaR']
+    exps = ['upper-cvar-opt-cvar', 'CVaR', 'max-opt-cvar']
+    env = 'FrozenLake4x4_cvarfirst'
     main_dirs = []
     for exp in exps:
+        if exp in ['upper-cvar-opt-cvar', 'max-opt-cvar']:
+            env = 'FrozenLake4x4_cvarfirst'
+        else:
+            env = 'FrozenLake4x4'
         main_dirs.append(os.path.join(path_to_exp, f'{exp}_{env}'))
     num_seeds = 5
     make_plots_seeds(
