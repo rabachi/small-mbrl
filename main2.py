@@ -1,16 +1,13 @@
-from torch import initial_seed
 # from src.logger import graph_single, graph_seeds
 from src.training import MBRLLoop
 from src.model import DirichletModel
-from envs.basic_envs import GarnetMDP, State2MDP
-from envs.chain import Chain
-from envs.ring import Ring
-from envs.randomfrozenlake import RandomFrozenLakeEnv
-from envs.cliffwalking import CliffWalkingEnv
+
+from envs.env import setup_environment
 # from src.logger import CSVLogger
 # from deploy import deploy_losses, deploy_MC2PS
 import numpy as np
 import hydra
+import safe_grid_gym
 import gym
 import pdb
 # from memory_profiler import profile
@@ -21,7 +18,13 @@ import pdb
 # @profile
 def experiment(args):
 
-    env = hydra.utils.instantiate(args.env.env_setup)
+    env = setup_environment(
+        args.env.env_setup,
+        args.env.env_type,
+        args.env.env_id,
+        args.seed,
+    )
+    # env = hydra.utils.instantiate(args.env.env_setup)
     print(env)
 
     # if args.env_name == 'chain':
@@ -48,7 +51,7 @@ def experiment(args):
         discount = 0.99
 
     print(args.train_type)
-    data_dir = f'seed_{args.seed}'
+    data_dir = f'{args.env.env_id}_{args.train_type.type}'
 
     agent = DirichletModel(
         nState, 

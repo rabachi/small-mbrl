@@ -154,9 +154,14 @@ class RandomFrozenLakeEnv(Env):
 
         self.initial_state_distrib = np.array(desc == b"S").astype("float64").ravel()
         self.initial_state_distrib /= self.initial_state_distrib.sum()
-
+        self.rng = np.random.RandomState(seed)
+        
         self.P = {s: {a: [] for a in range(nA)} for s in range(nS)}
-
+        self.R = {s: {a: 0 for a in range(nA)} for s in range(nS)}
+        for s in range(nS):
+            for a in range(nA):
+                self.R[s][a] = self.rng.uniform(0, 0.8)
+            
         def to_s(row, col):
             return row * ncol + col
 
@@ -178,8 +183,11 @@ class RandomFrozenLakeEnv(Env):
             newrow, newcol = inc(row, col, action)
             newstate = to_s(newrow, newcol)
             newletter = desc[newrow, newcol]
-            done = False #bytes(newletter) in b"GH"
-            reward = 10.*float(newletter == b"G") - float(newletter == b"H")
+            done = bytes(newletter) in b"GH"
+            if newletter in ["G", "H"]:
+                reward = 10.*float(newletter == b"G") - 1.0*float(newletter == b"H")
+            else:
+                reward = self.R[newstate][action]
             return newstate, reward, done
 
         for row in range(nrow):
@@ -213,7 +221,6 @@ class RandomFrozenLakeEnv(Env):
         self.elf_images = None
         self.goal_img = None
         self.start_img = None
-        self.rng = np.random.RandomState(seed)
 
     def get_name(self):
         return "RandomFrozenLake"

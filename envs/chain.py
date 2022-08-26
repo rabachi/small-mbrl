@@ -52,7 +52,8 @@ class Chain:
         done = False
         return self.state, reward, done, {}
 
-
+class osbandChain():
+    pass
 
 # class Chain:
 #     def __init__(self, nState, prob_slip, discount, SEED):

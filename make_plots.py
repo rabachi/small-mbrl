@@ -29,7 +29,7 @@ def make_plots_seeds(main_dirs, num_seeds):
 if __name__ == "__main__":
     path_to_exp = '/scratch/gobi1/abachiro/small_mbrl_results/exp/'
     # exps = ['max-opt', 'max-opt-cvar', 'upper-cvar','upper-cvar-opt-cvar', 'pg', 'psrl', 'CVaR']
-    exps = ['upper-cvar-opt-cvar', 'CVaR', 'max-opt-cvar']
+    exps = ['pg', 'CVaR']#['upper-cvar-opt-cvar', 'CVaR', 'max-opt-cvar']
     env = 'FrozenLake4x4_cvarfirst'
     main_dirs = []
     for exp in exps:
@@ -44,22 +44,24 @@ if __name__ == "__main__":
         num_seeds
     )
     # print(main_dirs)
-    # make_plots_single(
-    #     ['/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/upper-cvar-opt-cvar_FrozenLake4x4_constraint-15.0_midtrainsteps500',
-    #     # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/psrl-opt-cvar_FrozenLake4x4_constraint-20.0_midtrainsteps1',
-    #     # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/max-opt-cvar_FrozenLake4x4_constraint-20.0_midtrainsteps200',
-    #     # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/max-opt_FrozenLake4x4_constraint-20.0_midtrainsteps200',
-    #     # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/upper-cvar_FrozenLake4x4_constraint-20.0_midtrainsteps200',
-    #     # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/pg_FrozenLake4x4_constraint-20.0_midtrainsteps200',
-    #     # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/CVaR_FrozenLake4x4_constraint-20.0_midtrainsteps50'
-    #     ], 
-    #     'FL', 
-    #     ['upper-cvar-opt-cvar',
-    #     # 'psrl-opt-cvar',
-    #     # 'max-opt-cvar',
-    #     # 'max-opt',
-    #     # 'upper-cvar',
-    #     # 'pg',
-    #     # 'CVaR'
-    #     ])
+    make_plots_single(
+        [
+            # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/upper-cvar-opt-cvar_FrozenLake4x4_constraint-15.0_midtrainsteps500',
+            # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/psrl-opt-cvar_FrozenLake4x4_constraint-20.0_midtrainsteps1',
+            # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/max-opt-cvar_FrozenLake4x4_constraint-20.0_midtrainsteps200',
+            # '/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/max-opt_FrozenLake4x4_constraint-20.0_midtrainsteps200',
+            '/scratch/gobi1/abachiro/small_mbrl_results/exp/upper-cvar-opt-cvar_FrozenLake4x4_cvarfirst/seed_1',
+            '/scratch/gobi1/abachiro/small_mbrl_results/exp/pg_FrozenLake4x4_cvarfirst/seed_1',
+            '/scratch/gobi1/abachiro/small_mbrl_results/exp/CVaR_FrozenLake4x4_cvarfirst/seed_1'
+        ], 
+        'FL', 
+        [
+            'upper-cvar-opt-cvar',
+            # 'psrl-opt-cvar',
+            # 'max-opt-cvar',
+            # 'max-opt',
+            # 'upper-cvar',
+            'pg',
+            'CVaR'
+        ])
     # make_plots_single('/scratch/gobi1/abachiro/small_mbrl_results/exp/default_1/upper-cvar_FrozenLake4x4_constraint-15_midtrainsteps200', 'FL', 'upper-cvar')

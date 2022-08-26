@@ -1,5 +1,5 @@
-type: max-opt-cvar
+type: pg-cvar
 policy_lr: 0.01
 lambda_lr: 0.01
 pretrain_steps: 200
-mid_train_steps: 20
+mid_train_steps: 10

@@ -1,6 +1,8 @@
+env_type: gym
 env_setup:
   _target_: envs.cliffwalking.CliffWalkingEnv
   seed: ${seed}
 
-env_name: CliffWalking
-traj_len: 10
+env_id: CliffWalking-v0 #CliffWalking
+terminates: true
+traj_len: 100

@@ -115,16 +115,22 @@ def discount(rewards, discount_factor) -> np.ndarray:
 def vmap_sigmoid(x):
     return jax.vmap(sigmoid, in_axes=0, out_axes=0)(x)
 
-def get_log_policy(p_params, n_states, n_actions, temp):
+def get_log_policy(p_params, nState, nAction, temp):
     """
 
     :param p_params:
     :return:
     """
-    return log_softmax(p_params.reshape(n_states, n_actions), temp)#.reshape(-1,)
+    p_params = p_params.reshape(nState, nAction)
+    return jnp.log(p_params) - jnp.log(jnp.sum(p_params, axis=1, keepdims=True))
+    # return jnp.log(jnp.concatenate(p_params, 1 - jnp.sum(p_params, axis=1), axis=1) + jnp.ones_like()*0)
+    # return log_softmax(p_params.reshape(n_states, n_actions), temp)#.reshape(-1,)
     
 def get_policy(p_params, nState, nAction):
-    return softmax(p_params.reshape(nState, nAction), 1.0)
+    p_params = p_params.reshape(nState, nAction)
+    return p_params / jnp.sum(p_params, axis=1, keepdims=True)
+    # return jnp.concatenate(p_params, 1. - jnp.sum(p_params, axis=1), axis=1)
+    # return softmax(p_params.reshape(nState, nAction), 1.0)
 
 def log_softmax(vals, temp=1.):
     """Same function as softmax but not exp'd

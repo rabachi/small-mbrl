@@ -1,10 +1,9 @@
-env_type: self
+env_type: safe_grid_gym
 env_setup:
   _target_: envs.randomfrozenlake.RandomFrozenLakeEnv
   seed: ${seed}
   is_slippery: true
   map_name: null
-
-env_id: FrozenLake4x4 #FrozenLake-v1 #
+env_id: DistributionalShift-v0
 terminates: true
 traj_len: 100

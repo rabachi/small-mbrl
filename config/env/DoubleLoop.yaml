@@ -1,0 +1,8 @@
+env_type: self
+env_setup: 
+  _target_: envs.doubleloop.DoubleLoop
+  seed: ${seed}
+
+env_id: doubleloop
+terminates: false
+traj_len: 100
