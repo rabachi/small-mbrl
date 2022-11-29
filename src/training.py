@@ -20,21 +20,25 @@ class MBRLLoop():
         self.nAction = nAction
         self.initial_distribution = initial_distribution
         self.agent = agent
-        # self.logger = CSVLogger(
-        #     fieldnames={
-        #         'ep' : 0,
-        #         'av-V-model-pi' : 0,
-        #         'av-V-env-pi' : 0,
-        #         'v-alpha-quantile': 0,
-        #         'cvar-alpha' : 0,
-        #         'cvar-constraint-lambda': 0,
-        #         'grad-norm': 0,
-        #         'best_iter': 0
-        #     },
-        #     filename=data_dir+'_csvlog'
-        # )
-        # Tensorboard
-        self.writer = SummaryWriter(data_dir)
+        self.use_csv = False
+        if self.use_csv:
+            self.logger = CSVLogger(
+                fieldnames={
+                    'ep' : 0,
+                    'av-V-model-pi' : 0,
+                    'av-V-env-pi' : 0,
+                    'v-alpha-quantile': 0,
+                    'cvar-alpha' : 0,
+                    'cvar-constraint-lambda': 0,
+                    'grad-norm': 0,
+                    'best_iter': 0,
+                    'samples_taken': 0
+                },
+                filename=data_dir+'_csvlog'
+            )
+        else:
+            # Tensorboard
+            self.writer = SummaryWriter(data_dir)
 
     # @profile
     def training_loop(self, args):
@@ -82,13 +86,13 @@ class MBRLLoop():
 
             if (
                 args.env.terminates and 
-                (ep > 10) and 
-                (ep % 1 == 0)
+                (ep > args.env.start_train_ep) and 
+                (ep % args.env.train_freq_ep == 0)
                 ) or (
                     not args.env.terminates and
-                    (step > 1000)
+                    (step > args.env.start_train_step)
                     and
-                    (step % 100 == 0)
+                    (step % args.env.train_freq_step == 0)
             ):
                 if args.train_type.type == 'MC2PS':
                     v_alpha_quantile, cvar_alpha = self.agent.MC2PS(
@@ -152,7 +156,6 @@ class MBRLLoop():
                             objective = v_alpha_quantile #not really var, should clean this up, this quantity takes on a different value for each of these objectives so that I can track them on the objective they are optimizing
                         elif args.train_type.type in ['CVaR']:
                             objective = cvar_alpha
-
                         if objective > highest_objective:
                             highest_objective = objective
                             print(highest_objective)
@@ -162,7 +165,6 @@ class MBRLLoop():
                         train_steps += 1
                         print(f'Train_step: {train_steps}, Model Value fn: {vf_model:.3f}, grad_norm: {grad_norm:.3f}, cvar: {cvar_alpha:.3f}')
                     self.agent.policy.update_params(best_params)
-
                 elif args.train_type.type in ['psrl']:
                     R_j, P_j = self.agent.multiple_sample_mdp(args.num_samples_plan)
                     for train_step in range(args.train_type.mid_train_steps):
@@ -216,24 +218,22 @@ class MBRLLoop():
                     )
                     # print(f'lambda: {self.agent.lambda_param}, cvar: {cvar_alpha}')
                     print(f'Ep: {ep}, Model Value fn: {vf_model:.3f}, grad_norm: {grad_norm:.3f}, cvar: {cvar_alpha:.3f}')
-                else:
-                    unconstrained_train_type = 'CVaR' #'upper-cvar' if args.train_type.type=='upper-cvar-opt-cvar' else 'max-opt'
+                elif args.train_type.type == 'both-max-CVaR':
                     u = 0
                     grad_norm = 5.
                     highest_objective = np.infty * -1.
                     best_iter = 0
                     best_params = self.agent.policy.get_params()
-                    self.agent.policy_lr = 1.0
+                    # self.agent.policy_lr = 1.0
                     R_j, P_j = self.agent.multiple_sample_mdp(args.num_samples_plan)
-                    for train_step in range(args.train_type.pretrain_steps):
+                    for train_step in range(args.train_type.mid_train_steps):
                         (
                             vf_model, 
-                            v_alpha_quantile, 
+                            upper_objective, 
                             cvar_alpha, 
-                            grad_norm,
-                            samples_taken
+                            grad_norm
                         ) = self.agent.grad_step(
-                                unconstrained_train_type, 
+                                args.train_type.type, 
                                 **{
                                     'num_samples_plan': args.num_samples_plan,
                                     'risk_threshold': args.risk_threshold,
@@ -242,31 +242,69 @@ class MBRLLoop():
                                     'P_j': P_j
                                 }
                         )
-                        objective = cvar_alpha
+                        objective = cvar_alpha + args.init_lambda * upper_objective
                         if objective > highest_objective:
                             highest_objective = objective
                             print(highest_objective)
                             best_iter = train_step
                             best_params = self.agent.policy.get_params()
+                        print(f'Train_step: {train_step}, Model Value fn: {vf_model:.3f}, grad_norm: {grad_norm:.3f}, cvar: {cvar_alpha:.3f}, objective: {objective:.3f}')
+                    self.agent.policy.update_params(best_params)
+                    samples_taken = args.num_samples_plan
+                else:
+                    unconstrained_train_type = 'CVaR' #'upper-cvar' if args.train_type.type=='upper-cvar-opt-cvar' else 'max-opt'
+                    u = 0
+                    grad_norm = 5.
+                    if ep % 2 == 0:
+                        constraint_target = np.infty * -1.
+                    # highest_objective = np.infty * -1.
+                    # best_iter = 0
+                    # best_params = self.agent.policy.get_params()
+                    # self.agent.policy_lr = 1.0
+                    # R_j, P_j = self.agent.multiple_sample_mdp(args.num_samples_plan)
+                    # for train_step in range(args.train_type.pretrain_steps):
+                    #     (
+                    #         vf_model, 
+                    #         v_alpha_quantile, 
+                    #         cvar_alpha, 
+                    #         grad_norm,
+                    #         samples_taken
+                    #     ) = self.agent.grad_step(
+                    #             unconstrained_train_type, 
+                    #             **{
+                    #                 'num_samples_plan': args.num_samples_plan,
+                    #                 'risk_threshold': args.risk_threshold,
+                    #                 'k_value': args.k_value,
+                    #                 'R_j': R_j,
+                    #                 'P_j': P_j
+                    #             }
+                    #     )
+                    #     objective = cvar_alpha
+                    #     if objective > highest_objective:
+                    #         highest_objective = objective
+                    #         print(highest_objective)
+                    #         best_iter = train_step
+                    #         best_params = self.agent.policy.get_params()
 
-                        print(f'u: {u}, lambda: {self.agent.lambda_param:.3f}, grad_norm: {grad_norm:.3f}, cvar: {cvar_alpha:.3f}' )
-                        u += 1
-                    pre_train_best_iter = best_iter
+                    #     print(f'u: {u}, lambda: {self.agent.lambda_param:.3f}, grad_norm: {grad_norm:.3f}, cvar: {cvar_alpha:.3f}' )
+                    #     u += 1
+                    # pre_train_best_iter = best_iter
                     # self.agent.policy.reset_params()
                     self.agent.policy.update_params(best_params)
-                    self.agent.constraint = highest_objective
+                    self.agent.constraint = constraint_target
                     # self.agent.lambda_param = args.init_lambda
-                    print('New Constraint:', highest_objective)
+                    print('New Constraint:', constraint_target)
                     cvar_alphas = []
                     self.agent.policy_lr = args.train_type.policy_lr
                     tolerance = 1.0
                     p_t = 0.99
-
+                    best_cvar = 0
                     for train_step in range(args.train_type.mid_train_steps):
                         converged = False
                         num_iters = 0
                         highest_objective = np.infty * -1.
                         best_iter = 0
+                        best_cvar = 0
                         while not converged and (num_iters < 200):
                             (
                                 vf_model, 
@@ -297,14 +335,15 @@ class MBRLLoop():
                                 print(highest_objective)
                                 best_iter = num_iters
                                 best_params = self.agent.policy.get_params()
+                                best_cvar = cvar_alpha
 
                         self.agent.policy.update_params(best_params)
-                        self.agent.lambda_param = np.clip(self.agent.lambda_param - (cvar_alpha - self.agent.constraint)/tolerance, a_min=0., a_max=None)
+                        self.agent.lambda_param = np.clip(self.agent.lambda_param - (best_cvar - self.agent.constraint)/tolerance, a_min=0., a_max=None) #BUG: cvar_alpha is not the one corresponding to best_params!!!!!!, should recalculate cvar_alpha or save the one from the best iters: fixed I think 
                         tolerance = p_t * tolerance
                         
-                        print(f'train_step: {train_steps}, lambda: {self.agent.lambda_param:.3f}, grad_norm: {grad_norm:.3f}, tolerance: {tolerance:.3f} distance to constraint: {cvar_alpha - self.agent.constraint :.3f}')
+                        print(f'train_step: {train_steps}, lambda: {self.agent.lambda_param:.3f}, grad_norm: {grad_norm:.3f}, tolerance: {tolerance:.3f} distance to constraint: {best_cvar - self.agent.constraint :.3f}')
                         train_steps += 1
-                    best_iter = pre_train_best_iter
+                    # best_iter = pre_train_best_iter
 
                 if ep % args.log_freq == 0:
                     if args.env.terminates:
@@ -323,16 +362,19 @@ class MBRLLoop():
                             'best_iter': best_iter,
                             'samples_taken' : samples_taken
                         }
-                    for key, value in stats.items():
-                        self.writer.add_scalar(key, value, ep)
-                    # self.logger.writerow(stats)
+                    if self.use_csv:
+                        self.logger.writerow(stats)
+                    else:
+                        for key, value in stats.items():
+                            self.writer.add_scalar(key, value, ep)
                     print(f'Iter: {ep}, Env rets: {env_returns:.3f}')
                 
                 if args.reset_params:
                     self.agent.lambda_param = args.init_lambda
                     self.agent.policy_lr = args.train_type.policy_lr
                     self.agent.lambda_lr = args.train_type.lambda_lr
-        # self.logger.close()
+        if self.use_csv:
+            self.logger.close()
 
     def regret_evaluate_agent(self):
         regret = 0

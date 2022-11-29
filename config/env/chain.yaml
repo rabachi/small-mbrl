@@ -9,3 +9,10 @@ env_setup:
 env_id: chain
 terminates: false
 traj_len: 100
+
+start_train_ep: 10
+train_freq_ep: 1
+
+start_train_step: 1000
+train_freq_step: 100
+

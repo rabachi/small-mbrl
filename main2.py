@@ -7,9 +7,7 @@ from envs.env import setup_environment
 # from deploy import deploy_losses, deploy_MC2PS
 import numpy as np
 import hydra
-import safe_grid_gym
-import gym
-import pdb
+import jax
 # from memory_profiler import profile
 # SEED = 0
 
@@ -51,7 +49,7 @@ def experiment(args):
         discount = 0.99
 
     print(args.train_type)
-    data_dir = f'{args.env.env_id}_{args.train_type.type}'
+    data_dir = f'{args.env.env_id}_{args.train_type.type}_incorrectpriors{args.use_incorrect_priors}'
 
     agent = DirichletModel(
         nState, 
@@ -61,7 +59,8 @@ def experiment(args):
         initial_distribution, 
         args.init_lambda,
         args.train_type.lambda_lr,
-        args.train_type.policy_lr
+        args.train_type.policy_lr,
+        args.use_incorrect_priors
     )
 
     trainer = MBRLLoop(env, agent, nState, nAction, initial_distribution, data_dir)
@@ -74,4 +73,5 @@ def experiment(args):
     # trainer.training_then_sample()
 
 if __name__=="__main__":
+    jax.config.update('jax_platform_name', 'cpu')
     experiment()

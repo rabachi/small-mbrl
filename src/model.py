@@ -11,14 +11,33 @@ from src.agent import Agent
 
 # Dirichlet model
 class DirichletModel(Agent):
-    def __init__(self, nState, nAction, seed, discount, initial_distribution, init_lambda, lambda_lr, policy_lr, alpha0=1., mu0=0.,
-                 tau0=1., tau=1.):
+    def __init__(self, nState, nAction, seed, discount, initial_distribution, init_lambda, lambda_lr, policy_lr, use_incorrect_priors, alpha0=1., mu0=0., tau0=1., tau=1.):
         self.nState = nState
         self.nAction = nAction
         # self.epLen = epLen
-        self.alpha0 = alpha0
-        self.mu0 = mu0
-        self.tau0 = tau0
+        self.use_incorrect_priors = use_incorrect_priors
+        self.rng = np.random.RandomState(seed)
+        if use_incorrect_priors:
+            self.alpha0 = self.rng.beta(2, 5, size=(self.nState))
+            self.mu0 = -1.
+            self.tau0 = 0.01
+            self.R_prior = {}
+            self.P_prior = {}
+            for state in range(nState):
+                for action in range(nAction):
+                    self.R_prior[state, action] = (self.mu0, self.tau0)
+                    self.P_prior[state, action] = self.alpha0
+        else:
+            self.alpha0 = alpha0
+            self.mu0 = mu0
+            self.tau0 = tau0
+            self.R_prior = {}
+            self.P_prior = {}
+            for state in range(nState):
+                for action in range(nAction):
+                    self.R_prior[state, action] = (self.mu0, self.tau0)
+                    self.P_prior[state, action] = (self.alpha0 * np.ones(self.nState, dtype=np.float32))
+
         self.tau = tau
         self.discount = discount
         self.initial_distribution = initial_distribution
@@ -26,14 +45,6 @@ class DirichletModel(Agent):
         temp = 1.0
         self.policy = Policy(nState, nAction, temp, seed, p_params=None)
         super().__init__(self.nState, self.discount, self.initial_distribution, self.policy, init_lambda, lambda_lr, policy_lr)
-
-        self.R_prior = {}
-        self.P_prior = {}
-        for state in range(nState):
-            for action in range(nAction):
-                self.R_prior[state, action] = (self.mu0, self.tau0)
-                self.P_prior[state, action] = (self.alpha0 * np.ones(self.nState, dtype=np.float32))
-        self.rng = np.random.RandomState(seed)
         self.CE_model = (np.zeros((self.nState, self.nAction)), np.zeros((self.nState, self.nAction, self.nState)))
         self.f_best = - np.infty
 

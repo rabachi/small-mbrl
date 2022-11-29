@@ -135,6 +135,9 @@ class Agent:
             return self.optimistic_CVaR_constrained('optimistic-psrl', **kwargs) 
         elif train_type == 'upper-cvar-opt-cvar':
             return self.optimistic_CVaR_constrained('upper-cvar', **kwargs) 
+        #both-max
+        elif train_type == 'both-max-CVaR':
+            return self.both_max_CVaR(**kwargs)
         #risk-aware
         elif train_type == 'CVaR':
             return self.CVaR_grad_step(**kwargs)
@@ -236,23 +239,18 @@ class Agent:
         ):
         p_params = self.policy.get_params()
         p_grad = np.zeros_like(p_params)
-        R_CE, P_CE = self.get_CE_model()
-        R_CE = np.expand_dims(R_CE, axis=0)
-        P_CE = np.expand_dims(P_CE, axis=0)
+        R_CE, P_CE = self.get_CE_model() 
+        V_p_pi, V_p_pi_grad = jax.value_and_grad(policy_performance, 2)(R_CE, P_CE, p_params, self.initial_distribution, self.nState, self.nAction, self.discount)
 
-        policy = np.array(softmax(p_params))
-        grad_pi = jax.jacrev(softmax)(p_params)
-        V_p_pi, V_p_pi_grad = calculate_value_and_grad((R_CE, P_CE), grad_pi, policy, self.nState, self.discount, self.initial_distribution)
-
-        p_grad = np.mean(V_p_pi_grad, axis=0)
-        av_vpi = np.mean(V_p_pi, axis=0)
+        p_grad = V_p_pi_grad
+        av_vpi = V_p_pi
         p_params += self.policy_lr * p_grad
         self.policy.update_params(p_params)
         grad_norm = np.linalg.norm(p_grad)
 
-        _, _, v_alpha_quantile, cvar_alpha = self.posterior_sampling(p_params, num_samples_plan, risk_threshold, R_j=R_j, P_j=P_j)
+        _, _, v_alpha_quantile, cvar_alpha, samples_taken = self.posterior_sampling(p_params, num_samples_plan, risk_threshold, R_j=R_j, P_j=P_j)
         
-        return av_vpi, v_alpha_quantile, cvar_alpha, grad_norm
+        return av_vpi.item(), v_alpha_quantile.item(), cvar_alpha, grad_norm, samples_taken
 
     def VaR_delta_grad_step(self,
             num_samples_plan,
@@ -476,7 +474,7 @@ class Agent:
             upper_one_indices = np.nonzero(U_pi>upper_v_alpha_quantile)[0]
             upper_cvar_grad_terms = U_pi_grads[upper_one_indices]
             upper_avg_term = 1./((1-upper_risk_threshold)*num_samples_plan)
-            objective = upper_avg_term * U_pi[upper_one_indices]
+            objective = upper_avg_term * np.sum(U_pi[upper_one_indices], axis=0)
             optimistic_grad = upper_avg_term * np.sum(upper_cvar_grad_terms, axis=0)
         else:
             raise NotImplementedError(f'{optimism_type} not implemented')
@@ -493,6 +491,43 @@ class Agent:
         # print(f'Train_step: {train_step}, Model Value fn: {av_vpi:.3f}, lambda: {self.lambda_param:.3f}, cvar: {cvar_alpha.item():.3f}')
         return av_vpi, objective, cvar_alpha, grad_norm, samples_taken
         # return av_vpi, 0, 0, grad_norm
+
+    def both_max_CVaR(self,
+            num_samples_plan: int,
+            k_value: int,
+            risk_threshold: float,
+            R_j,
+            P_j
+        ):
+        p_params = self.policy.get_params()
+        U_pi, U_pi_grads, var_alpha, cvar_alpha, samples_taken = self.posterior_sampling(p_params, num_samples_plan, risk_threshold, R_j=R_j, P_j=P_j)
+
+        objective = 0
+        one_indices = np.nonzero(U_pi<var_alpha)
+        cvar_grad_terms = U_pi_grads[one_indices]
+        avg_term = 1./(risk_threshold*num_samples_plan)
+        constraint_grad = avg_term * np.sum(cvar_grad_terms, axis=0) 
+        av_vpi = np.mean(U_pi)
+
+        objective += self.lambda_param * cvar_alpha
+        
+        upper_risk_threshold = risk_threshold
+        # upper_cvar_alpha = self.CVaR_estimate(U_pi, 1 - upper_risk_threshold)
+        upper_v_alpha_quantile, _ = self.quantile_estimate(U_pi, 1 - upper_risk_threshold)
+        upper_one_indices = np.nonzero(U_pi>upper_v_alpha_quantile)
+        upper_cvar_grad_terms = U_pi_grads[upper_one_indices]
+        upper_avg_term = 1./((1-upper_risk_threshold)*num_samples_plan)
+
+        objective += upper_avg_term * np.sum(U_pi[upper_one_indices], axis=0)
+
+        optimistic_grad = upper_avg_term * np.sum(upper_cvar_grad_terms, axis=0)
+       
+        p_grad = optimistic_grad + self.lambda_param * constraint_grad
+        p_params = p_params + self.policy_lr * p_grad
+        grad_norm = np.linalg.norm(p_grad)
+        self.policy.update_params(p_params)
+
+        return av_vpi, objective, cvar_alpha, grad_norm
 
     def optimistic_CVaR_constrained(self,
             optimism_type,
@@ -534,7 +569,7 @@ class Agent:
             upper_one_indices = np.nonzero(U_pi>upper_v_alpha_quantile)
             upper_cvar_grad_terms = U_pi_grads[upper_one_indices]
             upper_avg_term = 1./((1-upper_risk_threshold)*num_samples_plan)
-            objective = upper_avg_term * U_pi[upper_one_indices]
+            objective = upper_avg_term * np.sum(U_pi[upper_one_indices], axis=0)
             optimistic_grad = upper_avg_term * np.sum(upper_cvar_grad_terms, axis=0)
         else:
             raise NotImplementedError(f'{optimism_type} not implemented')

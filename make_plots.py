@@ -27,7 +27,7 @@ def make_plots_seeds(main_dirs, num_seeds):
     graph_seeds2(main_dirs, num_seeds, 'cvar-constraint-lambda')
 
 if __name__ == "__main__":
-    path_to_exp = '/scratch/gobi1/abachiro/small_mbrl_results/exp/'
+    path_to_exp = '/scratch/gobi1/abachiro/small_mbrl_results/exp/aug-27-csv'
     # exps = ['max-opt', 'max-opt-cvar', 'upper-cvar','upper-cvar-opt-cvar', 'pg', 'psrl', 'CVaR']
     exps = ['pg', 'CVaR']#['upper-cvar-opt-cvar', 'CVaR', 'max-opt-cvar']
     env = 'FrozenLake4x4_cvarfirst'

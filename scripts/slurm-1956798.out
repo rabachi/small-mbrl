@@ -1,0 +1,12 @@
+SafetyGrid IslandNavigation pg-CE
+/var/spool/slurmd/job1956798/slurm_script: 45: sbatch: not found
+SafetyGrid IslandNavigation upper-cvar-opt-cvar
+/var/spool/slurmd/job1956798/slurm_script: 45: sbatch: not found
+SafetyGrid IslandNavigation max-opt-cvar
+/var/spool/slurmd/job1956798/slurm_script: 45: sbatch: not found
+SafetyGrid IslandNavigation pg-cvar
+/var/spool/slurmd/job1956798/slurm_script: 45: sbatch: not found
+SafetyGrid IslandNavigation upper-cvar
+/var/spool/slurmd/job1956798/slurm_script: 45: sbatch: not found
+SafetyGrid IslandNavigation max-opt
+/var/spool/slurmd/job1956798/slurm_script: 45: sbatch: not found

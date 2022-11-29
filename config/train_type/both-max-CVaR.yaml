@@ -1,0 +1,6 @@
+type: both-max-CVaR
+policy_lr: 0.01
+lambda_lr: 0.0
+pretrain_steps: 0
+mid_train_steps: 50
+
