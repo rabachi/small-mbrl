@@ -5,6 +5,8 @@ import jax
 from jax.nn import sigmoid
 from itertools import product
 from replay_buffer import ReplayBuffer
+import scipy
+import pdb
 # from memory_profiler import profile
 
 def similar(L):
@@ -131,6 +133,26 @@ def get_policy(p_params, nState, nAction):
     return p_params / jnp.sum(p_params, axis=1, keepdims=True)
     # return jnp.concatenate(p_params, 1. - jnp.sum(p_params, axis=1), axis=1)
     # return softmax(p_params.reshape(nState, nAction), 1.0)
+    # return project_onto_simplex(p_params.reshape(nState, nAction), axis=1)
+
+def project_onto_simplex(params, axis=1):
+    zero = 1.e-6
+    n_features = params.shape[axis]
+    one = 1. - n_features * 1.e-6
+    #sort descending
+    u = jnp.flip(jnp.sort(params, axis=axis), axis=axis)
+    cssv = jnp.cumsum(u, axis=axis)
+    ind = np.arange(n_features) + 1
+    ind = jnp.broadcast_to(ind, params.shape)
+    cond = (u + (one - cssv) / ind) > zero
+    masked_ind = jnp.where(cond, ind, -np.infty)
+    rho = jnp.max(masked_ind, axis=axis).astype(int)
+    rho = jnp.expand_dims(rho, axis=axis)
+    cumsum_u_upto_rho = jnp.take_along_axis(cssv, rho - 1, axis=axis)
+    lambda_ = (one - cumsum_u_upto_rho) / (rho * 1.0)
+    w = jnp.maximum(params + lambda_, zero)
+    # assert(np.isclose(w.sum(axis), 1.0).all(), print(w.sum(axis)))
+    return w
 
 def log_softmax(vals, temp=1.):
     """Same function as softmax but not exp'd
@@ -148,12 +170,12 @@ def softmax(vals, temp=1.):
      temp (float, optional): Defaults to 1.. Temperature parameter
     Returns:
     """
-    z = vals - jnp.max(vals, axis=1, keepdims=True)
-    numerator = jnp.exp(z)
-    denom = jnp.sum(numerator, axis=1, keepdims=True)
-    softmax = numerator/denom
-    # test = jnp.exp((1. / temp) * vals - logsumexp((1. / temp) *
-                                                #   vals, axis=1, keepdims=True))
+    # z = vals - jnp.max(vals, axis=1, keepdims=True)
+    # numerator = jnp.exp(z)
+    # denom = jnp.sum(numerator, axis=1, keepdims=True)
+    # softmax = numerator/denom
+    softmax = jnp.exp((1. / temp) * vals - logsumexp((1. / temp) *
+                                                  vals, axis=1, keepdims=True))
     # print(jnp.isclose(test, softmax))
     return softmax
 

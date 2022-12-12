@@ -8,6 +8,7 @@ from itertools import product
 from typing import List, Tuple, Dict
 from scipy.special import comb
 import pickle
+import pdb
 # from memory_profiler import profile
 from src.utils import softmax, get_log_policy, get_policy
 import gc
@@ -177,13 +178,15 @@ class Agent:
         V_p_pi, V_p_pi_grad, var_alpha, cvar_alpha, samples_taken = self.posterior_sampling(p_params, num_samples_plan, risk_threshold, R_j=R_j, P_j=P_j)
         p_grad = np.mean(V_p_pi_grad, axis=0)
         av_vpi = np.mean(V_p_pi, axis=0)
+        old_params = p_params
 
         use_fim = False
         if not use_fim:
         #     lr = 2.
         #     lr = self.backtrackingls(lr, 0.1, 0.8, p_grad, lambda p: np.mean(self.posterior_sampling(p, num_samples_plan, risk_threshold)[0]), p_params)
         #     print(lr)
-            p_params = np.clip(p_params + self.policy_lr * p_grad, 1.e-6, 1.-1.e-6)
+            p_grad = np.clip(p_grad, a_min=-10, a_max=10.)
+            p_params = p_params + self.policy_lr * p_grad
         else:
             fim = self.calc_FIM(p_params)
             step = np.linalg.solve(fim, p_grad)
@@ -191,7 +194,7 @@ class Agent:
         
         grad_norm = np.linalg.norm(p_grad)
         self.policy.update_params(p_params)
-        return av_vpi, var_alpha, cvar_alpha, grad_norm, samples_taken
+        return av_vpi, var_alpha, cvar_alpha, grad_norm
 
     def calc_FIM(self, p_params):
         policy = get_policy(p_params, self.nState, self.nAction)
@@ -250,7 +253,7 @@ class Agent:
 
         _, _, v_alpha_quantile, cvar_alpha, samples_taken = self.posterior_sampling(p_params, num_samples_plan, risk_threshold, R_j=R_j, P_j=P_j)
         
-        return av_vpi.item(), v_alpha_quantile.item(), cvar_alpha, grad_norm, samples_taken
+        return av_vpi.item(), v_alpha_quantile.item(), cvar_alpha, grad_norm
 
     def VaR_delta_grad_step(self,
             num_samples_plan,
@@ -312,7 +315,7 @@ class Agent:
         #     self.f_best = av_vpi
         #     self.x_best = p_params
         self.policy.update_params(p_params)
-        return av_vpi, var_alpha, cvar_alpha, grad_norm, samples_taken
+        return av_vpi, var_alpha, cvar_alpha, grad_norm
 
     def psrl_CVaR_constrained(self,
             optimism_type,
@@ -482,14 +485,14 @@ class Agent:
         p_grad = optimistic_grad
         grad_norm = np.linalg.norm(p_grad)
         # print(grad_norm)
-
+        p_grad /= grad_norm
         p_params += self.policy_lr * p_grad
         self.policy.update_params(p_params)
         del U_pi, U_pi_grads
         gc.collect()
 
         # print(f'Train_step: {train_step}, Model Value fn: {av_vpi:.3f}, lambda: {self.lambda_param:.3f}, cvar: {cvar_alpha.item():.3f}')
-        return av_vpi, objective, cvar_alpha, grad_norm, samples_taken
+        return av_vpi, objective, cvar_alpha, grad_norm
         # return av_vpi, 0, 0, grad_norm
 
     def both_max_CVaR(self,
@@ -540,8 +543,6 @@ class Agent:
         '''
         optimism_type: 'pg' (not optimistic), 'max', 'optimistic-psrl', 'upper-cvar', 'random'
         '''
-        damping = 10.
-        cvar_constraint = self.constraint #should be based on the risk_threshold
         p_params = self.policy.get_params()
         U_pi, U_pi_grads, var_alpha, cvar_alpha, samples_taken = self.posterior_sampling(p_params, num_samples_plan, risk_threshold, R_j=R_j, P_j=P_j)
 

@@ -18,6 +18,7 @@ python ../main2.py \
     train_type=$1 \
     env=$2 \
     env.env_id=$3 \
-    seed=$4 \
-    use_incorrect_priors=True \
-    hydra.run.dir=/scratch/gobi1/abachiro/small_mbrl_results/exp/aug-28/$SLURM_JOB_ID
+    seed=$RANDOM \
+    use_incorrect_priors=False \
+    hydra.run.dir=/scratch/gobi1/abachiro/small_mbrl_results/exp/normed_reward_high_lr/$SLURM_JOB_ID
+    # hydra.run.dir=/scratch/gobi1/abachiro/small_mbrl_results/exp/dec-8/$SLURM_JOB_ID

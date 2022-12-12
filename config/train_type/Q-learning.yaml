@@ -1,0 +1,6 @@
+type: Q-learning
+alpha: 0.5
+epsilon_decay: 0.001
+num_eps_eval: 100
+lambda_lr: 0
+policy_lr: 0

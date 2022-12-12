@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Type, Union
 import hydra
 import math
 import safe_grid_gym
+import pdb
 import gym
 import numpy as np
 
@@ -23,11 +24,31 @@ class SafeGymWrapper(gym.Env):
     
     def step(self, action):
         next_obs, reward, done, info = self._env.step(action)
+        reward = (reward - self.min_reward)/(self.max_reward - self.min_reward)
+        # if reward == (self.max_reward - self.min_reward)/(self.max_reward - self.min_reward):
+        #     reward = 10.
+        # elif reward == -1:
+        #     reward = 0.01
+        # else:
+        #     reward = 1.0
+        # reward = reward/(-self.min_reward)
         return self.map_to_index(next_obs), reward, done, info
     
     def map_to_index(self, obs):
+        # print(obs)
         hash_key = hash(obs.tobytes()) % self.nState
+        # print(hash_key)
         return hash_key
+
+    @property
+    def max_reward(self):
+        return 49.0
+        # return (50.0 + 50.0)/100.
+    
+    @property
+    def min_reward(self):
+        return -51.
+        # return (-51.0 + 50.0) / 100.
 
     # def map_all_obs(self):
     #     obs_mapping = {}
@@ -62,6 +83,15 @@ class GymWrapper(gym.Env):
     def step(self, action):
         return self._env.step(action)
     
+    @property
+    def max_reward(self):
+        return 1.0
+        # return (50.0 + 50.0)/100.
+    
+    @property
+    def min_reward(self):
+        return 0.
+    
 def setup_environment(
         env_setup: dict,
         env_type: str,
@@ -69,7 +99,7 @@ def setup_environment(
         seed: Optional[int] = None,
     ):
     if env_type == "gym":
-        return GymWrapper(gym.make(env_id))
+        return GymWrapper(gym.make(env_id, is_slippery=False))
     elif env_type == "safe_grid_gym":
         return SafeGymWrapper(gym.make(env_id))
     elif env_type == "self":

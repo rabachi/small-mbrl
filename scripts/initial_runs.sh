@@ -2,7 +2,7 @@
 
 # Algs="pg pg-CE CVaR upper-cvar-opt-cvar max-opt-cvar pg-cvar upper-cvar max-opt"
 # Algs="pg CVaR"
-Algs="max-opt max-opt-cvar"
+Algs="pg-CE"
 
 
 # echo "FrozenLake $alg"
@@ -42,16 +42,16 @@ Algs="max-opt max-opt-cvar"
 #     done
 # done
 
-# for alg in $Algs; do
-#     echo "SafetyGrid DistributionalShift-v0 $alg"
-#     for i in {1..8}; do
-#         sbatch base_script.sh $alg SafetyGrid DistributionalShift-v0 $i
-#     done
-# done
-
 for alg in $Algs; do
-    echo "SafetyGrid IslandNavigation $alg"
-    for i in {1..8}; do
-        sbatch base_script.sh $alg SafetyGrid IslandNavigation-v0 $i
+    echo "SafetyGrid DistributionalShift-v0 $alg"
+    for i in {1..2}; do
+        sbatch base_script.sh $alg SafetyGrid DistributionalShift-v0
     done
 done
+
+# for alg in $Algs; do
+#     echo "SafetyGrid IslandNavigation $alg"
+#     for i in {1..8}; do
+#         sbatch base_script.sh $alg SafetyGrid IslandNavigation-v0 $i
+#     done
+# done
