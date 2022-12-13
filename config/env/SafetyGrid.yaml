@@ -5,6 +5,9 @@ env_setup:
   is_slippery: true
   map_name: null
 env_id: DistributionalShift-v0
+
+norm_reward: false
+
 terminates: true
 traj_len: 100
 
@@ -13,4 +16,5 @@ train_freq_ep: 100
 
 start_train_step: 10000
 train_freq_step: 1000
+
 

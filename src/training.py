@@ -2,9 +2,7 @@ import jax.numpy as jnp
 from src.utils import *
 import numpy as np
 from src.logger import CSVLogger
-# from memory_profiler import profile
-from torch.utils.tensorboard import SummaryWriter  # type: ignore
-from torchinfo import summary
+import wandb
 from src.utils import get_policy
 import pdb
 
@@ -18,7 +16,8 @@ class MBRLLoop():
                 data_dir,
                 p_params_baseline,
                 baseline_true_perf,
-                seed = 0, 
+                seed=0, 
+                wandb_entity="rabachi"
                 ):
         self.env = env
         self.nState = nState
@@ -32,10 +31,7 @@ class MBRLLoop():
         # self.lb_vf_models = []
         self.executed_policy_params = []
         self.curr_budget_limit = 0.
-
-        if self.use_csv:
-            self.logger = CSVLogger(
-                fieldnames={
+        args_dict = {
                     'ep' : 0,
                     'av-V-model-pi' : 0,
                     'av-V-env-pi' : 0,
@@ -44,12 +40,21 @@ class MBRLLoop():
                     'cvar-constraint-lambda': 0,
                     'policy-entropy': 0,
                     'grad-norm': 0
-                },
+                }
+
+        if self.use_csv:
+            self.logger = CSVLogger(
+                fieldnames=args_dict,
                 filename=data_dir+'_csvlog'
             )
         else:
+            run = wandb.init(
+                project="small_mbrl",
+                entity=wandb_entity,
+                config=args_dict
+            )
             # Tensorboard
-            self.writer = SummaryWriter(data_dir)
+            # self.writer = SummaryWriter(data_dir)
 
         self.rng = np.random.RandomState(seed)
 
@@ -82,8 +87,9 @@ class MBRLLoop():
                         'av-V-env-pi' : env_returns,
                         'successes' : sum(outcomes)
                     }
-            for key, value in stats.items():
-                self.writer.add_scalar(key, value, ep)
+            wandb.log(stats, step=ep)
+            # for key, value in stats.items():
+            #     self.writer.add_scalar(key, value, ep)
             print(f'Iter: {ep}, Env rets: {env_returns:.3f}, outcomes: {outcomes}')
         return env_returns
 
@@ -117,8 +123,9 @@ class MBRLLoop():
         if self.use_csv:
             self.logger.writerow(stats)
         else:
-            for key, value in stats.items():
-                self.writer.add_scalar(key, value, 0)
+            wandb.log(stats, step=0)
+            # for key, value in stats.items():
+            #     self.writer.add_scalar(key, value, 0)
 
         print(f'Iter: {0}, Env rets: {env_returns:.3f}')
 
@@ -140,8 +147,7 @@ class MBRLLoop():
                 if done:
                     while (step < args.env.traj_len):
                         action = self.agent.rng.choice(self.nAction)
-                        reward = -self.env.min_reward / (self.env.max_reward - self.env.min_reward)
-                        # reward = 0
+                        reward = self.env.terminal_reward()
                         self.agent.update_obs(state, action, reward, state, False)
                         step += 1
             else:
@@ -214,9 +220,10 @@ class MBRLLoop():
                     if self.use_csv:
                         self.logger.writerow(stats)
                     else:
-                        for key, value in stats.items():
-                            print(key, value)
-                            self.writer.add_scalar(key, value, ep)
+                        wandb.log(stats, step=ep)
+                        # for key, value in stats.items():
+                        #     print(key, value)
+                        #     self.writer.add_scalar(key, value, ep)
                     print(f'Iter: {ep}, Env rets: {env_returns:.3f}')
                 
                 if args.reset_params:
@@ -265,8 +272,6 @@ class MBRLLoop():
         highest_objective = np.infty * -1.
         best_cvar = 0
         best_vf_model = 0
-        # find optimistic policy here
-        #train_type = '-'.join(args.train_type.type.split('-')[:-1]) #get rid of cvar part in type string
         train_type = "upper-cvar"
         print(train_type)
         for train_step in range(args.train_type.mid_train_steps):
@@ -322,7 +327,6 @@ class MBRLLoop():
         budget = self.calculate_budget(args, p_params_baseline, baseline_true_perf, R_j, P_j)
         # budget is lb_sum - baseline term, need to add newpolicylb
         self.agent.constraint = budget
-        # print('New Constraint:', budget)
         self.agent.policy_lr = args.train_type.policy_lr
         tolerance = 1.0
         p_t = 0.99
@@ -352,7 +356,6 @@ class MBRLLoop():
                 )
                 converged = (grad_norm < 1e-5)
                 num_iters += 1
-                print(num_iters, vf_model)
                 
                 if args.train_type.type in ['upper-cvar-opt-cvar', 'max-opt-cvar']:
                     objective = upper_objective 
@@ -361,7 +364,6 @@ class MBRLLoop():
 
                 if objective > highest_objective:
                     highest_objective = objective
-                    print(highest_objective)
                     best_iter = num_iters
                     best_vf_model = vf_model
                     best_params = self.agent.policy.get_params()
@@ -445,7 +447,7 @@ class MBRLLoop():
             # print(f'lambda: {self.agent.lambda_param}, cvar: {cvar_alpha}')
             print(f'Train_step: {train_step}, Model Value fn: {vf_model:.3f}, grad_norm: {grad_norm:.3f}, cvar: {cvar_alpha:.3f}')
         self.agent.policy.update_params(best_params)
-        
+
         return best_vf_model, best_cvar, highest_objective, grad_norm
 
     def regret_evaluate_agent(self):
@@ -488,15 +490,14 @@ class MBRLLoop():
                 step += 1
                 # print(next_state, reward, done)
             if done:
-                if reward > 0.51: #self.env.max_reward:
+                if reward > self.env.goal_reward: #self.env.max_reward:
                     num_goals_reached += 1
-                elif reward <= 0:
+                elif reward <= self.env.hole_reward:
                     num_fails += 1
             if done:
                 while (step < traj_len):
                     action = self.agent.rng.choice(self.nAction)
-                    # reward = 0
-                    reward = -self.env.min_reward / (self.env.max_reward - self.env.min_reward)
+                    reward = self.env.terminal_reward()
                     ep_rewards.append(reward)
                     step += 1
             eval_rewards[ep] = discount(ep_rewards, self.agent.discount)[0]
@@ -531,57 +532,15 @@ class MBRLLoop():
             vf_model = 0
             env_returns = self.evaluate_agent(args.num_eps_eval, args.env.traj_len)#_exact()
             regret, bayesian_regret = self.regret_evaluate_agent()
-            # self.logger.writerow(
-            #     {
-            #         'av-V-model-pi' : vf_model,
-            #         'av-V-env-pi' : env_returns,
-            #         'v-alpha-quantile' : v_alpha_quantile,
-            #         'cvar-constraint-lambda' : self.agent.lambda_param,
-            #         'cvar-alpha' : cvar_alpha,
-            #         'regret'     : regret,
-            #         'bayesian-regret' : bayesian_regret
-            #         }
-            #     )
             print(f'MC2PS: {ep}, Model Value fn: {vf_model}, Env rets: {env_returns}')
-            # self.logger.close()
             return
 
         for p_step in range(100):
-            # R, P = self.agent.get_CE_model()
             vf_model, v_alpha_quantile, cvar_alpha = self.agent.grad_step(self.train_type, **self.args)
 
-            # print(self.agent.policy.get_params())
             if p_step % self.log_freq == 0:
                 env_returns = self.evaluate_agent(args.num_eps_eval, args.env.traj_len)
                 regret, bayesian_regret = self.regret_evaluate_agent()
 
-            # self.logger.writerow(
-            #     {
-            #         'av-V-model-pi' : vf_model,
-            #         'av-V-env-pi' : env_returns,
-            #         'v-alpha-quantile' : v_alpha_quantile,
-            #         'cvar-constraint-lambda' : self.agent.lambda_param,
-            #         'cvar-alpha' : cvar_alpha,
-            #         'regret'     : regret,
-            #         'bayesian-regret' : bayesian_regret
-            #         }
-            #     )
             print(f'Iter: {p_step}, Model Value fn: {vf_model}, Env rets: {env_returns}, cvar: {cvar_alpha}')
             
-        # self.logger.close()
-
-# decommissioning this because not used anymore and it's kind of annoying to keep track of as it's an offline method
-    # if args.train_type.type == 'MC2PS':
-    #     v_alpha_quantile, cvar_alpha = self.agent.MC2PS(
-    #         args.num_samples_plan, 
-    #         args.num_models, 
-    #         args.num_discounts, 
-    #         args.sigma, 
-    #         args.eps_rel, 
-    #         args.significance_level, 
-    #         args.risk_threshold 
-    #     )
-    #     vf_model = 0
-    #     env_returns = self.evaluate_agent(args.num_eps_eval, args.env.traj_len)#_exact()
-    #     print(f'MC2PS: {ep}, Model Value fn: {vf_model:.3f}, Env rets: {env_returns:.3f}')
-    #     return v_alpha_quantile, cvar_alpha, env_returns

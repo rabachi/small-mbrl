@@ -11,18 +11,16 @@ import jax
 
 import copy
 import os
-# from memory_profiler import profile
-# SEED = 0
 
-# @hydra.main(config_path="config/FrozenLake.yaml")#, config_name="chain")
+
 @hydra.main(config_path="config", config_name="run_test")
-# @profile
 def experiment(args):
 
     env = setup_environment(
         args.env.env_setup,
         args.env.env_type,
         args.env.env_id,
+        args.env.norm_reward,
         args.seed,
     )
     # env = hydra.utils.instantiate(args.env.env_setup)
@@ -79,7 +77,8 @@ def experiment(args):
         data_dir,
         p_params_baseline,
         baseline_true_perf,
-        seed=int(args.seed)
+        seed=int(args.seed),
+        wandb_entity=args.wandb_entity,
     )
 
     if args.train_type.type == 'MC2PS': #this one is only offline

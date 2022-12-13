@@ -1,0 +1,18 @@
+name: small-mbrl
+channels:
+  - defaults
+dependencies:
+  - python=3.9
+  - scipy
+  - pip
+  - typing_extensions==4.4.0
+  - matplotlib
+  - pip:
+    - numpy==1.23
+    - wandb
+    - jax==0.3.13
+    - jaxlib==0.3.10
+    - hydra-core==1.2.0
+    - safe-grid-gym @ git+https://github.com/david-lindner/safe-grid-gym.git@f521e906735bb712a0217f491f269da2890c0f00
+    - ai-safety-gridworlds @ https://github.com/timorl/ai-safety-gridworlds/tarball/master
+    - gym==0.24.1

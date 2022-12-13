@@ -1,4 +1,4 @@
 type: pg-CE
 policy_lr: 0.1 #0.001 #0.1
 lambda_lr: 0.0
-mid_train_steps: 100 #600
+mid_train_steps: 100 #100 #600

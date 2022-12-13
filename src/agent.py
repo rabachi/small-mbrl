@@ -1,6 +1,5 @@
 import numpy as np
 # from regex import F
-import torch
 import jax.numpy as jnp
 from jax.scipy.linalg import lu_factor, lu_solve
 import jax
@@ -9,7 +8,6 @@ from typing import List, Tuple, Dict
 from scipy.special import comb
 import pickle
 import pdb
-# from memory_profiler import profile
 from src.utils import softmax, get_log_policy, get_policy
 import gc
 
@@ -185,6 +183,7 @@ class Agent:
         #     lr = 2.
         #     lr = self.backtrackingls(lr, 0.1, 0.8, p_grad, lambda p: np.mean(self.posterior_sampling(p, num_samples_plan, risk_threshold)[0]), p_params)
         #     print(lr)
+            grad_norm = np.linalg.norm(p_grad)
             p_grad = np.clip(p_grad, a_min=-10, a_max=10.)
             p_params = p_params + self.policy_lr * p_grad
         else:
@@ -192,7 +191,6 @@ class Agent:
             step = np.linalg.solve(fim, p_grad)
             p_params = np.clip(p_params + self.policy_lr * step, 0, None)
         
-        grad_norm = np.linalg.norm(p_grad)
         self.policy.update_params(p_params)
         return av_vpi, var_alpha, cvar_alpha, grad_norm
 
@@ -249,7 +247,7 @@ class Agent:
         av_vpi = V_p_pi
         p_params += self.policy_lr * p_grad
         self.policy.update_params(p_params)
-        grad_norm = np.linalg.norm(p_grad)
+        grad_norm = np.linalg.norm(p_grad, 1)
 
         _, _, v_alpha_quantile, cvar_alpha, samples_taken = self.posterior_sampling(p_params, num_samples_plan, risk_threshold, R_j=R_j, P_j=P_j)
         

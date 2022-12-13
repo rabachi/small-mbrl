@@ -7,6 +7,8 @@ env_id: CliffWalking-v0 #CliffWalking
 terminates: true
 traj_len: 100
 
+norm_reward: false
+
 start_train_ep: 10
 train_freq_ep: 1
 

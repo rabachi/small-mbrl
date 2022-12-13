@@ -1,16 +1,12 @@
 defaults:
-  - train_type: pg-CE #upper-cvar-opt-cvar
-  - env: SafetyGrid # #CliffWalking #FrozenLake #
+  - train_type: max-opt-cvar
+  - env: SafetyGrid #CliffWalking #FrozenLake #
   - _self_
 
-  # env_name: chain
-  #FrozenLake4x4
-  # traj_len: 100
-
 init_lambda: 1.0
-reset_params: true #false
+reset_params: true 
 
-optimization_type: conservative
+optimization_type: constrained
 alpha_baseline: 0.8
 
 num_samples_plan: 500
@@ -29,6 +25,7 @@ sigma: 'CVaR' #only for MC2PS
 num_models: 10 #only for MC2PS
 num_discounts: 10 #only for MC2PS
 
+wandb_entity: 'rabachi'
 
 seed: 0
 hydra_dir_end: default
@@ -36,6 +33,7 @@ hydra_dir_end: default
 hydra:
   run:
     # dir: /scratch/gobi1/abachiro/small_mbrl_results/exp/${now:%Y-%m-%d}/${train_type.type}_${env.env_name}_cvarfirst
-    dir: /scratch/gobi1/abachiro/small_mbrl_results/exp/normed_reward_high_lr_${now:%Y-%m-%d}/
+    #dir: /scratch/gobi1/abachiro/small_mbrl_results/exp/norm_reward4_${now:%Y-%m-%d}/
     #${now:%H-%M-%S}
+    dir: outputs/
     #should add slurm job id

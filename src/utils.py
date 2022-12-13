@@ -4,10 +4,29 @@ from jax.scipy.special import logsumexp
 import jax
 from jax.nn import sigmoid
 from itertools import product
-from replay_buffer import ReplayBuffer
+from src.replay_buffer import ReplayBuffer
 import scipy
 import pdb
 # from memory_profiler import profile
+
+def get_id(args):
+    """
+    :param args:
+    :return:
+    """
+    # TODO: Make these in a sensible order, so readable
+    args_id = ''
+    args_id += f'train_type{args.train_type}_'
+    args_id += f'seed{args.seed}'
+    args_id += f'risk_threshold{args.risk_threshold}_'
+    args_id += f'policy_lr{args.policy_lr}_'
+    args_id += f'num_samples_plan{args.num_samples_plan}_'
+    # args_id += f'num_eps={args.num_eps}_'
+    args_id += f'traj_len{args.traj_len}_'
+    args_id += f'k_value{args.k_value}_'
+    args_id += f'log_freq{args.log_freq}_'
+    args_id += f'num_eps_eval{args.num_eps_eval}_'
+    return args_id
 
 def similar(L):
     return all(np.isclose(x, y, rtol=1e-1) for x,y in zip(L[-10:], L[-9:]))

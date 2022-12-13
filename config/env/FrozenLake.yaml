@@ -9,6 +9,8 @@ env_id: FrozenLake-v1 #4x4 #FrozenLake-v1 #
 terminates: true
 traj_len: 100
 
+norm_reward: false
+
 start_train_ep: 100
 train_freq_ep: 10
 

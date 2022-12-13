@@ -10,6 +10,8 @@ env_id: chain
 terminates: false
 traj_len: 100
 
+norm_reward: false
+
 start_train_ep: 10
 train_freq_ep: 1
 
