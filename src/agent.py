@@ -483,8 +483,8 @@ class Agent:
         p_grad = optimistic_grad
         grad_norm = np.linalg.norm(p_grad)
         # print(grad_norm)
-        p_grad /= grad_norm
-        p_params += self.policy_lr * p_grad
+        # p_grad /= grad_norm
+        p_params += self.policy_lr * (p_grad / grad_norm)
         self.policy.update_params(p_params)
         del U_pi, U_pi_grads
         gc.collect()

@@ -96,10 +96,14 @@ class MBRLLoop():
     # @profile
     def training_loop(self, args):
         env_returns = 0
-        vf_model = 0 
+        vf_model = 0
         grad_norm, cvar_alpha = 0, 0
         objective = 0
         regret, bayesian_regret = 0, 0
+        constraints = []
+        cvars = []
+        objectives = []
+        policy_returns = []
         print(args.num_eps)
 
         if not args.env.terminates:
@@ -128,7 +132,7 @@ class MBRLLoop():
             #     self.writer.add_scalar(key, value, 0)
 
         print(f'Iter: {0}, Env rets: {env_returns:.3f}')
-
+        train_iter = 0
         for ep in range(1, num_eps + 1):
             #generate data
             if args.env.terminates:
@@ -185,8 +189,20 @@ class MBRLLoop():
                             vf_model, 
                             cvar_alpha, 
                             objective, 
-                            grad_norm 
+                            grad_norm,
+                            constraint 
                         ) = self.train_constrained_agent(args, self.p_params_baseline, self.baseline_true_perf)
+                        constraints.append(constraint)
+                        cvars.append(cvar_alpha)
+                        objectives.append(objective)
+                        policy_perfo = self.evaluate_agent(args.num_eps_eval, args.env.traj_len)
+                        policy_returns.append(policy_perfo)
+                        # np.save(self.returns_dir + "/contraints.npy", constraints)
+                        # np.save(self.returns_dir + "/objectives.npy", objectives)
+                        # np.save(self.returns_dir + "/cvars.npy", cvars)
+                        # np.save(self.returns_dir + "/policy_returns.npy", policy_returns)
+
+                        train_iter += 1
                 elif args.train_type.type in ['psrl', 'psrl-opt-cvar']: #TODO: Only PSRL implemented
                     (
                         vf_model, 
@@ -238,18 +254,22 @@ class MBRLLoop():
         # recompute lower bounds for all policies in self.executed_policy_params
         cvars = np.zeros((len(self.executed_policy_params), 1))
         for idx in range(len(self.executed_policy_params)):
-            if (self.executed_policy_params[idx] == p_params_baseline).all():
+            if (np.equal(self.executed_policy_params[idx] - p_params_baseline, 0.)).all() and False:
                 cvars[idx] = baseline_true_perf
             else:
-                _, _, _, cvar_alpha, _ = self.agent.posterior_sampling(self.executed_policy_params[idx], args.num_samples_plan, args.risk_threshold, R_j=R_j, P_j=P_j)
-                cvars[idx] = max(0, cvar_alpha)
+                _, _, _, cvar_alpha, _ = self.agent.posterior_sampling(self.executed_policy_params[idx],
+                                                                       args.num_samples_plan, args.risk_threshold,
+                                                                       R_j=R_j, P_j=P_j)
+                #cvars[idx] = max(0, cvar_alpha)  # can it be negative?
+                cvars[idx] = cvar_alpha
         # sum over lower bounds
-        lb_sum = np.sum(cvars)
+        # lb_sum = np.sum(cvars)
         # recalculate V of baseline policy
         # U_pi_baseline, _, _, _, _ = self.posterior_sampling(p_params_baseline, args.num_samples_plan, args.risk_threshold, R_j=R_j, P_j=P_j)
-        budget = lb_sum - (len(self.executed_policy_params) + 1) * args.alpha_baseline * baseline_true_perf
+        budget = 0 if cvars.shape[0] == 0 else np.max(cvars) #lb_sum - (len(self.executed_policy_params) + 1) * args.alpha_baseline * baseline_true_perf
         # this should be less than curr_budget_limit - new_policy_lowerbound
-        return budget #, U_pi_baseline
+        print(budget)
+        return budget  # , U_pi_baseline
         
     def train_conservative_agent(self, args, p_params_baseline, baseline_true_perf):
         grad_norm = 5.
@@ -300,7 +320,7 @@ class MBRLLoop():
                 print(highest_objective)
                 best_vf_model = vf_model
                 best_params = self.agent.policy.get_params()
-                best_cvar = max(0, cvar_alpha)
+                best_cvar = cvar_alpha
             
         print(budget + best_cvar, args.alpha_baseline * baseline_true_perf, baseline_true_perf)
         if budget + best_cvar < 0:
@@ -326,11 +346,15 @@ class MBRLLoop():
         self.agent.policy.update_params(best_params)
         budget = self.calculate_budget(args, p_params_baseline, baseline_true_perf, R_j, P_j)
         # budget is lb_sum - baseline term, need to add newpolicylb
+        if len(self.executed_policy_params) == 0:
+            budget = -1000
         self.agent.constraint = budget
         self.agent.policy_lr = args.train_type.policy_lr
         tolerance = 1.0
-        p_t = 0.99
+        p_t = 0.92
         best_cvar = 0
+        # if args.const_lambda:
+            # args.train_type.mid_train_steps = 1
         for train_step in range(args.train_type.mid_train_steps):
             converged = False
             num_iters = 0
@@ -338,7 +362,7 @@ class MBRLLoop():
             best_iter = 0
             best_cvar = 0
             best_vf_model = 0
-            while not converged and (num_iters < 200):
+            while not converged and (num_iters < args.train_type.low_train_steps):
                 (
                     vf_model, 
                     upper_objective, 
@@ -367,16 +391,24 @@ class MBRLLoop():
                     best_iter = num_iters
                     best_vf_model = vf_model
                     best_params = self.agent.policy.get_params()
-                    best_cvar = max(0, cvar_alpha)
+                    best_cvar = cvar_alpha
 
             self.agent.policy.update_params(best_params)
-            self.agent.lambda_param = np.clip(self.agent.lambda_param - (best_cvar + self.agent.constraint)/tolerance, a_min=0., a_max=None)
+            # if not args.const_lambda:
+            print(self.agent.lambda_param - (cvar_alpha - self.agent.constraint) / tolerance)
+            print(self.agent.constraint)
+            print(cvar_alpha)
+            self.agent.lambda_param = np.clip(self.agent.lambda_param -
+                                                  (cvar_alpha - self.agent.constraint) / tolerance,
+                                                    a_min=0., a_max=None)
             tolerance = p_t * tolerance
             
-            print(f'train_step: {train_step}, lambda: {self.agent.lambda_param:.3f}, grad_norm: {grad_norm:.3f}, tolerance: {tolerance:.3f} distance to constraint: {best_cvar + self.agent.constraint :.3f}')
+            print(
+                f'train_step: {train_step}, lambda: {self.agent.lambda_param:.3f}, grad_norm: {grad_norm:.3f},'
+                f' tolerance: {tolerance:.3f} distance to constraint: {best_cvar - self.agent.constraint :.3f}')
         
         self.executed_policy_params.append(best_params) #is this part correct? should we play baseline on purpose sometimes or is that covered by the constrained opt?
-        return best_vf_model, best_cvar, highest_objective, grad_norm
+        return best_vf_model, best_cvar, highest_objective, grad_norm, budget
             
     def train_psrl_agent(self, args):
         #TODO: only psrl implemented and needs testing. Constrained version removed for now due to changing constraints etc.

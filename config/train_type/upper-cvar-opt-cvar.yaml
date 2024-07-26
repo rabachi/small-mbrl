@@ -1,7 +1,8 @@
 type: upper-cvar-opt-cvar
-policy_lr: 1e-2 #0.1
+policy_lr: 0.1 #1e-2 #0.1
 lambda_lr: 0.01
 # mid_train_steps: 20
 # mid_train_steps: 200
 mid_train_steps: 100
+low_train_steps: 2
 

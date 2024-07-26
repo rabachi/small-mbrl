@@ -1,7 +1,9 @@
 type: max-opt-cvar
-policy_lr: 0.01
+# policy_lr: 0.01
+# lambda_lr: 0.01
+policy_lr: 0.1 #1e-2 #0.1
 lambda_lr: 0.01
 pretrain_steps: 200
 mid_train_steps: 20
-
+low_train_steps: 2
 
